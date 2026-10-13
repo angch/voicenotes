@@ -222,7 +222,7 @@ class SpeechTranscriber:
                 temperature=0.0,
                 vad_filter=True,
                 vad_parameters=dict(min_silence_duration_ms=400),
-                word_timestamps=True,
+                word_timestamps=False,
             )
             detected_lang = info.language
             lang_prob = info.language_probability
@@ -240,7 +240,7 @@ class SpeechTranscriber:
                     temperature=0.0,
                     vad_filter=True,
                     vad_parameters=dict(min_silence_duration_ms=400),
-                    word_timestamps=True,
+                    word_timestamps=False,
                 )
                 detected_lang = info.language
                 lang_prob = info.language_probability

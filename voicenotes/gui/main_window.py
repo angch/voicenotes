@@ -68,7 +68,10 @@ from voicenotes.gui.audio_player import AudioPlayerWidget
 from voicenotes.gui.dialogs import AboutDialog, RecordDialog, SettingsDialog
 from voicenotes.gui.styles import get_stylesheet
 from voicenotes.gui.speakers_panel import SPEAKER_COLORS, SpeakersPanel
-from voicenotes.gui.transcription_worker import TranscriptionWorker
+from voicenotes.gui.transcription_worker import (
+    LiveTranscriptionWorker,
+    TranscriptionWorker,
+)
 
 
 class NotepadTextEdit(QTextEdit):
@@ -112,6 +115,8 @@ class MainWindow(QMainWindow):
 
         self.transcriber = SpeechTranscriber()
         self.worker: Optional[TranscriptionWorker] = None
+        self.live_worker: Optional[LiveTranscriptionWorker] = None
+        self._is_recording: bool = False
         self.current_result: Optional[TranscriptionResult] = None
         self.current_audio_file: Optional[str] = None
         self.current_text_file: Optional[str] = None
@@ -524,9 +529,79 @@ class MainWindow(QMainWindow):
             self.load_audio_file(file_path)
 
     def _on_record_mic(self):
-        dlg = RecordDialog(self)
-        if dlg.exec() == RecordDialog.DialogCode.Accepted and dlg.recorded_file:
-            self.load_audio_file(dlg.recorded_file)
+        """Toggle live real-time microphone recording and streaming transcription."""
+        if self._is_recording:
+            self._stop_live_recording()
+        else:
+            self._start_live_recording()
+
+    def _start_live_recording(self):
+        """Start real-time live microphone dictation directly into notes."""
+        self._is_recording = True
+        self.btn_record.setText("⏹ Stop Recording")
+        self.btn_record.setStyleSheet(
+            "QPushButton { background-color: #d9383a; color: #ffffff; font-weight: bold; padding: 4px 10px; border-radius: 4px; border: 1px solid #b32d2f; }"
+        )
+        self.btn_open_audio.setEnabled(False)
+        self.btn_transcribe.setEnabled(False)
+
+        self.progress_frame.setVisible(True)
+        self.progress_bar.setRange(0, 0)  # Pulse indicator
+        self.lbl_progress.setText("🔴 Listening live... Speak into microphone")
+
+        # Clear editor and speakers panel for fresh live dictation
+        self.editor.clear()
+        self.speakers_panel.clear()
+
+        model_key = config.get("model", "small")
+        lang_key = config.get("language", None)
+        diarize = self.btn_detect_speakers.isChecked()
+
+        self.live_worker = LiveTranscriptionWorker(
+            transcriber=self.transcriber,
+            model_name=model_key,
+            language=lang_key,
+            diarize=diarize,
+            chunk_seconds=2.5,
+            parent=self,
+        )
+        self.live_worker.segment_ready.connect(self._on_worker_segment)
+        self.live_worker.status_updated.connect(self.lbl_progress.setText)
+        self.live_worker.recording_finished.connect(self._on_live_recording_finished)
+        self.live_worker.error_occurred.connect(self._on_worker_error)
+        self.live_worker.start()
+
+    def _stop_live_recording(self):
+        """Stop live recording and finalize transcription and speaker tagging."""
+        self.lbl_progress.setText("Finalizing recording and speaker tagging...")
+        if self.live_worker and self.live_worker.isRunning():
+            self.live_worker.stop_recording()
+
+    def _on_live_recording_finished(self, wav_path: str, result: TranscriptionResult):
+        """Handle completion of live recording session."""
+        self._is_recording = False
+        self.btn_record.setText("🔴 Record")
+        self.btn_record.setStyleSheet("")
+        self.btn_open_audio.setEnabled(True)
+        self.btn_transcribe.setEnabled(True)
+
+        self.progress_bar.setRange(0, 100)
+        self.progress_bar.setValue(100)
+        self.lbl_progress.setText("Recording & transcription complete!")
+
+        # Load generated WAV into player so user can seek/listen immediately
+        self.load_audio_file(wav_path)
+        self.current_result = result
+
+        # Re-render complete transcript with speaker tags if diarized
+        self._render_transcript_html(result)
+
+        if result.diarization_enabled:
+            self.speakers_panel.update_speakers(result.segments)
+        else:
+            self.speakers_panel.clear()
+
+        QTimer.singleShot(1500, lambda: self.progress_frame.setVisible(False))
 
     def _on_transcribe_clicked(self):
         if not self.current_audio_file:
@@ -578,11 +653,8 @@ class MainWindow(QMainWindow):
         text_html = f'<span style="color: {text_color};"> {seg.text.strip()}</span>'
         paragraph = f"<p style='margin: 4px 0;'>{link_html}{text_html}</p>"
 
-        # Move cursor to end and insert HTML
-        cursor = self.editor.textCursor()
-        cursor.movePosition(QTextCursor.MoveOperation.End)
-        cursor.insertHtml(paragraph)
-        self.editor.setTextCursor(cursor)
+        # Use append to cleanly insert new formatted block and auto-scroll
+        self.editor.append(paragraph)
         self.editor.ensureCursorVisible()
         self._update_status_bar()
 
@@ -668,6 +740,9 @@ class MainWindow(QMainWindow):
         QMessageBox.critical(self, "Transcription Error", f"An error occurred during transcription:\n{err_msg}")
 
     def _on_cancel_transcription(self):
+        if self._is_recording:
+            self._stop_live_recording()
+            return
         if self.worker and self.worker.isRunning():
             self.worker.cancel()
             self.worker.terminate()
@@ -703,6 +778,8 @@ class MainWindow(QMainWindow):
             self.status_bar.showMessage(f"Exported successfully to {file_path}", 4000)
 
     def _on_new_file(self):
+        if self._is_recording:
+            self._stop_live_recording()
         self.editor.clear()
         self.speakers_panel.clear()
         self.current_text_file = None
@@ -743,3 +820,12 @@ class MainWindow(QMainWindow):
     def _on_about(self):
         dlg = AboutDialog(self)
         dlg.exec()
+
+    def closeEvent(self, event):
+        if self._is_recording and self.live_worker:
+            self.live_worker.stop_recording()
+            self.live_worker.wait(1000)
+        if self.worker and self.worker.isRunning():
+            self.worker.cancel()
+            self.worker.wait(1000)
+        super().closeEvent(event)

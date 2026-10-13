@@ -249,3 +249,38 @@ def test_detect_speakers_toggle(app_window):
     win.btn_detect_speakers.setChecked(False)
     assert config.get("diarization_enabled") is False
     assert "OFF" in win.btn_detect_speakers.text()
+
+
+def test_live_recording_toggle_and_stream(app_window):
+    """Test starting and stopping live microphone recording and streaming into the editor."""
+    from voicenotes.engine.transcriber import TranscriptionResult, TranscriptionSegment
+    win = app_window
+    assert win._is_recording is False
+    assert "Record" in win.btn_record.text()
+
+    # Simulate start live recording
+    win._is_recording = True
+    win.btn_record.setText("⏹ Stop Recording")
+    assert "Stop" in win.btn_record.text()
+
+    # Stream segments as if emitted by live worker
+    seg1 = TranscriptionSegment(id=1, start=0.0, end=2.5, text="Speaking into microphone.")
+    win._on_worker_segment(seg1)
+    assert "Speaking into microphone" in win.editor.toPlainText()
+
+    # Finish live recording
+    dummy_result = TranscriptionResult(
+        audio_path="test.wav",
+        duration=2.5,
+        language="en",
+        language_probability=1.0,
+        segments=[seg1],
+        model_name="small",
+        num_speakers=1,
+        diarization_enabled=False,
+    )
+    win._on_live_recording_finished("samples/single_mic_male.wav", dummy_result)
+    assert win._is_recording is False
+    assert "Record" in win.btn_record.text()
+    assert win.btn_transcribe.isEnabled() is True
+    assert win.current_result is not None
