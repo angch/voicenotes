@@ -1,0 +1,89 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+    inputs:
+      tag_name:
+        description: 'Release tag name (e.g. v0.1.0)'
+        required: false
+        default: 'v0.1.0'
+
+permissions:
+  contents: write
+
+jobs:
+  build-windows:
+    name: Build Windows Installer & Release
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+        with:
+          version: "latest"
+
+      - name: Set up Inno Setup
+        uses: crazy-max/ghaction-innosetup@v3
+
+      - name: Install Dependencies
+        run: |
+          uv sync
+
+      - name: Run Test Suite
+        run: |
+          uv run python -m pytest
+
+      - name: Build Standalone Executable
+        run: |
+          uv run python build_executable.py
+
+      - name: Determine Version
+        id: version_info
+        shell: pwsh
+        run: |
+          $ver = "${{ github.ref_name }}"
+          if (-not $ver -or $ver.StartsWith("refs/") -or $ver -eq "main") {
+            $ver = "${{ github.event.inputs.tag_name }}"
+            if (-not $ver) { $ver = "v0.1.0" }
+          }
+          Write-Host "Resolved release version: $ver"
+          "version=$ver" >> $env:GITHUB_OUTPUT
+
+      - name: Compile Windows Installer
+        run: |
+          iscc VoiceNotes.iss /DMyAppVersion=${{ steps.version_info.outputs.version }}
+
+      - name: Create Portable Zip Package
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force -Path dist-installer | Out-Null
+          $zipPath = "dist-installer\VoiceNotes-${{ steps.version_info.outputs.version }}-windows-x64-portable.zip"
+          Compress-Archive -Path dist\VoiceNotes\* -DestinationPath $zipPath -Force
+          Get-ChildItem dist-installer
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.version_info.outputs.version }}
+          name: VoiceNotes ${{ steps.version_info.outputs.version }}
+          files: |
+            dist-installer/VoiceNotes-Setup-*.exe
+            dist-installer/VoiceNotes-*-portable.zip
+          draft: false
+          prerelease: false
+          generate_release_notes: true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
