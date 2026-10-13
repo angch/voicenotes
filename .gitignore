@@ -1,0 +1,40 @@
+# Python-generated files
+__pycache__/
+*.py[oc]
+build/
+dist/
+wheels/
+*.egg-info/
+*.spec.bak
+
+# Virtual environments
+.venv/
+venv/
+env/
+
+# PyInstaller / Build artifacts
+*.manifest
+*.spec_build/
+
+# Application user data and temp files
+.cache/
+temp_recordings/
+*.tmp.wav
+
+# Local settings (keep defaults)
+settings.local.json
+
+# Model caches and lock files
+models/models--*
+models/.locks/
+models/blobs/
+models/CACHEDIR.TAG
+models/*.bin
+models/*.safetensors
+models/*.onnx
+!models/.gitkeep
+
+# Test outputs
+samples/test_output.txt
+temp_recordings/
+*.tmp.wav
