@@ -443,3 +443,52 @@ def test_system_theme_support(app_window):
     assert win.act_theme_light.isChecked() is True
 
 
+def test_dual_pass_live_draft_and_refinement(app_window):
+    """Test 250ms draft streaming and subsequent refinement turn replacement."""
+    from voicenotes.engine.transcriber import TranscriptionSegment
+    from voicenotes.gui.transcription_worker import LiveTranscriptionWorker
+
+    win = app_window
+
+    worker = LiveTranscriptionWorker(
+        transcriber=win.transcriber,
+        model_name="small",
+        chunk_seconds=0.25,
+    )
+    assert worker.chunk_seconds == 0.25
+    assert worker.draft_model_name == "tiny"
+    assert hasattr(worker, "draft_ready")
+    assert hasattr(worker, "segment_ready")
+
+    # Start recording state
+    win._is_recording = True
+    win._live_committed_segments = []
+    win._live_draft_text = ""
+
+    # 1. Simulate ~250ms draft arrival
+    win._on_live_draft_ready("Testing real-time speech", 0.0)
+    assert "Testing real-time speech" in win.editor.toPlainText()
+    assert win._live_draft_text == "Testing real-time speech"
+
+    # 2. Simulate subsequent draft refinement rewind
+    win._on_live_draft_ready("Testing real-time speech right now", 0.0)
+    assert "Testing real-time speech right now" in win.editor.toPlainText()
+
+    # 3. Simulate refinement pass committing the finalized segment
+    refined_seg = TranscriptionSegment(
+        id=1,
+        start=0.0,
+        end=2.0,
+        text="Testing real-time speech right now.",
+        speaker="Speaker 1",
+    )
+    win._on_live_segment_ready(refined_seg)
+    assert "Speaker 1" in win.editor.toPlainText()
+    assert "Testing real-time speech right now." in win.editor.toPlainText()
+    assert win._live_draft_text == ""
+    assert len(win._live_committed_segments) == 1
+
+    win._is_recording = False
+
+
+

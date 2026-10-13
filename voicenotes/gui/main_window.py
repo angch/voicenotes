@@ -127,6 +127,9 @@ class MainWindow(QMainWindow):
         self.current_audio_file: Optional[str] = None
         self.current_text_file: Optional[str] = None
         self._is_modified: bool = False
+        self._live_committed_segments: list[TranscriptionSegment] = []
+        self._live_draft_text: str = ""
+        self._live_draft_start: float = 0.0
 
         self._init_ui()
         self._apply_theme()
@@ -735,6 +738,9 @@ class MainWindow(QMainWindow):
         # Clear editor and speakers panel for fresh live dictation
         self.editor.clear()
         self.speakers_panel.clear()
+        self._live_committed_segments = []
+        self._live_draft_text = ""
+        self._live_draft_start = 0.0
 
         model_key = config.get("model", "small")
         lang_key = config.get("language", None)
@@ -745,10 +751,11 @@ class MainWindow(QMainWindow):
             model_name=model_key,
             language=lang_key,
             diarize=diarize,
-            chunk_seconds=2.5,
+            chunk_seconds=0.25,  # 250ms real-time cadence
             parent=self,
         )
-        self.live_worker.segment_ready.connect(self._on_worker_segment)
+        self.live_worker.draft_ready.connect(self._on_live_draft_ready)
+        self.live_worker.segment_ready.connect(self._on_live_segment_ready)
         self.live_worker.status_updated.connect(self.lbl_progress.setText)
         self.live_worker.recording_finished.connect(self._on_live_recording_finished)
         self.live_worker.error_occurred.connect(self._on_worker_error)
@@ -760,9 +767,69 @@ class MainWindow(QMainWindow):
         if self.live_worker and self.live_worker.isRunning():
             self.live_worker.stop_recording()
 
+    def _on_live_draft_ready(self, draft_text: str, start_sec: float):
+        """Handle ~250ms low-latency draft preview from streaming audio."""
+        if not self._is_recording:
+            return
+        self._live_draft_text = draft_text
+        self._live_draft_start = start_sec
+        self._render_live_dictation()
+
+    def _on_live_segment_ready(self, seg: TranscriptionSegment):
+        """Handle refined/committed segment from refinement pass."""
+        self._live_committed_segments.append(seg)
+        self._live_draft_text = ""
+        self._render_live_dictation()
+
+        # Update speakers panel live as turns are refined
+        if self.btn_detect_speakers.isChecked():
+            self.speakers_panel.update_speakers(self._live_committed_segments)
+
+    def _render_live_dictation(self):
+        """Render both refined committed segments and active in-progress draft preview."""
+        is_dark = get_effective_theme(config.get("theme", "system")) == "dark"
+        ts_color = "#4dabf7" if is_dark else "#0067c0"
+        text_color = "#f0f0f0" if is_dark else "#1a1a1a"
+        draft_color = "#888888" if is_dark else "#555555"
+
+        palette = SPEAKER_COLORS_DARK if is_dark else SPEAKER_COLORS
+        speaker_color_map = {}
+        distinct_speakers = []
+        for s in self._live_committed_segments:
+            if s.speaker and s.speaker not in distinct_speakers:
+                distinct_speakers.append(s.speaker)
+        for idx, spk in enumerate(distinct_speakers):
+            fg, _ = palette[idx % len(palette)]
+            speaker_color_map[spk] = fg
+
+        html_parts = []
+        for seg in self._live_committed_segments:
+            ts_str = seg.timestamp_str
+            start_sec = seg.start
+            link_html = f'<a href="time:{start_sec:.2f}" style="color: {ts_color}; text-decoration: none; font-weight: bold; font-family: monospace;">{ts_str}</a>'
+            speaker_html = ""
+            if seg.speaker:
+                spk_col = speaker_color_map.get(seg.speaker, "#087f5b")
+                speaker_html = f' <b style="color: {spk_col};">{seg.speaker}:</b>'
+            text_html = f'<span style="color: {text_color};"> {seg.text.strip()}</span>'
+            html_parts.append(f"<p style='margin: 4px 0;'>{link_html}{speaker_html}{text_html}</p>")
+
+        # Append live draft line if active
+        if self._live_draft_text and self._live_draft_text.strip():
+            draft_ts = format_timestamp(self._live_draft_start)
+            draft_link = f'<span style="color: {ts_color}; font-weight: bold; font-family: monospace;">[{draft_ts}...]</span>'
+            draft_content = f'<span style="color: {draft_color}; font-style: italic;"> {self._live_draft_text.strip()} ✍️</span>'
+            html_parts.append(f"<p style='margin: 4px 0;'>{draft_link}{draft_content}</p>")
+
+        self.editor.setHtml("".join(html_parts))
+        self.editor.moveCursor(QTextCursor.MoveOperation.End)
+        self._is_modified = True
+        self._update_status_bar()
+
     def _on_live_recording_finished(self, wav_path: str, result: TranscriptionResult):
         """Handle completion of live recording session."""
         self._is_recording = False
+        self._live_draft_text = ""
         self.btn_record.setText("🔴 Record")
         self.btn_record.setStyleSheet("")
         self.btn_open_audio.setEnabled(True)
@@ -826,20 +893,7 @@ class MainWindow(QMainWindow):
 
     def _on_worker_segment(self, seg: TranscriptionSegment):
         """Stream transcription segment directly into the notes in real-time."""
-        is_dark = get_effective_theme(config.get("theme", "system")) == "dark"
-        ts_color = "#4dabf7" if is_dark else "#0067c0"
-        text_color = "#f0f0f0" if is_dark else "#1a1a1a"
-
-        ts_str = seg.timestamp_str
-        start_sec = seg.start
-        link_html = f'<a href="time:{start_sec:.2f}" style="color: {ts_color}; text-decoration: none; font-weight: bold; font-family: monospace;">{ts_str}</a>'
-        text_html = f'<span style="color: {text_color};"> {seg.text.strip()}</span>'
-        paragraph = f"<p style='margin: 4px 0;'>{link_html}{text_html}</p>"
-
-        # Use append to cleanly insert new formatted block and auto-scroll
-        self.editor.append(paragraph)
-        self.editor.ensureCursorVisible()
-        self._update_status_bar()
+        self._on_live_segment_ready(seg)
 
     def _on_worker_finished(self, result: TranscriptionResult):
         self.current_result = result
