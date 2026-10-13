@@ -11,7 +11,7 @@ from PyQt6.QtCore import Qt
 from PyQt6.QtGui import QColor, QGuiApplication, QPalette
 
 LIGHT_THEME = """
-QMainWindow {
+QMainWindow, QDialog {
     background-color: #f9f9f9;
 }
 QWidget {
@@ -41,6 +41,7 @@ QMenu {
 QMenu::item {
     padding: 6px 24px;
     border-radius: 4px;
+    color: #1a1a1a;
 }
 QMenu::item:selected {
     background-color: #0067c0;
@@ -70,6 +71,7 @@ QTextEdit {
 }
 QPushButton {
     background-color: #fbfbfb;
+    color: #1a1a1a;
     border: 1px solid #d0d0d0;
     border-radius: 5px;
     padding: 6px 14px;
@@ -114,6 +116,7 @@ QPushButton#recordButton:hover {
 }
 QComboBox {
     background-color: #ffffff;
+    color: #1a1a1a;
     border: 1px solid #d0d0d0;
     border-radius: 5px;
     padding: 5px 10px;
@@ -126,9 +129,17 @@ QComboBox::drop-down {
     border: none;
     width: 20px;
 }
+QComboBox QAbstractItemView {
+    background-color: #ffffff;
+    color: #1a1a1a;
+    selection-background-color: #0067c0;
+    selection-color: #ffffff;
+    border: 1px solid #d0d0d0;
+}
 QCheckBox {
     spacing: 6px;
     font-weight: 500;
+    color: #1a1a1a;
 }
 QSlider::groove:horizontal {
     height: 6px;
@@ -176,6 +187,7 @@ QGroupBox {
     padding-top: 10px;
     background-color: #ffffff;
     font-weight: 600;
+    color: #1a1a1a;
 }
 QGroupBox::title {
     subcontrol-origin: margin;
@@ -193,6 +205,37 @@ QLineEdit {
 }
 QLineEdit:focus {
     border-color: #0067c0;
+}
+QTableWidget {
+    background-color: #ffffff;
+    color: #1a1a1a;
+    gridline-color: #e5e5e5;
+    border: 1px solid #d0d0d0;
+    border-radius: 4px;
+    selection-background-color: #e7f3ff;
+    selection-color: #000000;
+}
+QTableWidget QTableCornerButton::section {
+    background-color: #f3f3f3;
+    border: 1px solid #e0e0e0;
+}
+QHeaderView::section {
+    background-color: #f3f3f3;
+    color: #333333;
+    padding: 5px 8px;
+    border: 1px solid #e0e0e0;
+    font-weight: 600;
+    font-size: 12px;
+}
+QDialogButtonBox QPushButton {
+    min-width: 72px;
+    padding: 5px 14px;
+    color: #1a1a1a;
+    background-color: #fbfbfb;
+    border: 1px solid #d0d0d0;
+}
+QDialogButtonBox QPushButton:hover {
+    background-color: #f0f0f0;
 }
 QSplitter::handle {
     background-color: #e0e0e0;
@@ -221,10 +264,28 @@ QScrollArea > QWidget > QWidget {
     background-color: #f3f3f3;
     border-bottom: 1px solid #e0e0e0;
 }
+#findReplaceBar QPushButton {
+    padding: 2px 6px;
+    min-width: 24px;
+    color: #1a1a1a;
+    background-color: #ffffff;
+    border: 1px solid #d0d0d0;
+    border-radius: 4px;
+}
+#findReplaceBar QPushButton:hover {
+    background-color: #e8e8e8;
+    border-color: #a0a0a0;
+}
+#findReplaceBar QPushButton:checked {
+    background-color: #e7f3ff;
+    color: #0067c0;
+    border-color: #0067c0;
+    font-weight: 600;
+}
 """
 
 DARK_THEME = """
-QMainWindow {
+QMainWindow, QDialog {
     background-color: #202020;
 }
 QWidget {
@@ -254,6 +315,7 @@ QMenu {
 QMenu::item {
     padding: 6px 24px;
     border-radius: 4px;
+    color: #e0e0e0;
 }
 QMenu::item:selected {
     background-color: #0078d4;
@@ -419,6 +481,37 @@ QLineEdit {
 QLineEdit:focus {
     border-color: #0078d4;
 }
+QTableWidget {
+    background-color: #1e1e1e;
+    color: #f0f0f0;
+    gridline-color: #333333;
+    border: 1px solid #3d3d3d;
+    border-radius: 4px;
+    selection-background-color: #182a3d;
+    selection-color: #ffffff;
+}
+QTableWidget QTableCornerButton::section {
+    background-color: #262626;
+    border: 1px solid #333333;
+}
+QHeaderView::section {
+    background-color: #262626;
+    color: #d0d0d0;
+    padding: 5px 8px;
+    border: 1px solid #333333;
+    font-weight: 600;
+    font-size: 12px;
+}
+QDialogButtonBox QPushButton {
+    min-width: 72px;
+    padding: 5px 14px;
+    color: #f0f0f0;
+    background-color: #2d2d2d;
+    border: 1px solid #3d3d3d;
+}
+QDialogButtonBox QPushButton:hover {
+    background-color: #383838;
+}
 QSplitter::handle {
     background-color: #333333;
 }
@@ -445,6 +538,24 @@ QScrollArea > QWidget > QWidget {
 #findReplaceBar, FindReplaceBar {
     background-color: #262626;
     border-bottom: 1px solid #333333;
+}
+#findReplaceBar QPushButton {
+    padding: 2px 6px;
+    min-width: 24px;
+    color: #f0f0f0;
+    background-color: #2d2d2d;
+    border: 1px solid #3d3d3d;
+    border-radius: 4px;
+}
+#findReplaceBar QPushButton:hover {
+    background-color: #383838;
+    border-color: #505050;
+}
+#findReplaceBar QPushButton:checked {
+    background-color: #182a3d;
+    color: #4dabf7;
+    border-color: #0078d4;
+    font-weight: 600;
 }
 """
 

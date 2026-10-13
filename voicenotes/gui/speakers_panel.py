@@ -79,6 +79,7 @@ class SpeakerCard(QFrame):
         self._stats_col = "#aaaaaa" if is_dark else "#555555"
 
         self.setFrameShape(QFrame.Shape.StyledPanel)
+        self.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Fixed)
         self.setStyleSheet(
             f"""
             SpeakerCard {{
@@ -232,6 +233,8 @@ class SpeakersPanel(QWidget):
             item = self.cards_layout.takeAt(0)
             widget = item.widget()
             if widget:
+                widget.setParent(None)
+                widget.hide()
                 widget.deleteLater()
 
         self.lbl_placeholder = QLabel(
@@ -274,6 +277,8 @@ class SpeakersPanel(QWidget):
             item = self.cards_layout.takeAt(0)
             widget = item.widget()
             if widget:
+                widget.setParent(None)
+                widget.hide()
                 widget.deleteLater()
 
         # Compute stats per speaker
@@ -318,3 +323,5 @@ class SpeakersPanel(QWidget):
             card.renamed.connect(self.speaker_renamed.emit)
             card.play_sample.connect(self.play_speaker_sample.emit)
             self.cards_layout.addWidget(card)
+
+        self.cards_layout.addStretch(1)

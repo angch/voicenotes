@@ -38,6 +38,7 @@ from voicenotes.config import (
 )
 from voicenotes.engine.audio_utils import AudioRecorder, format_timestamp
 from voicenotes.engine.model_manager import ModelManager
+from voicenotes.gui.styles import get_effective_theme, get_stylesheet
 
 
 class ModelDownloadWorker(QThread):
@@ -73,6 +74,8 @@ class RecordDialog(QDialog):
         super().__init__(parent)
         self.setWindowTitle("Record Audio")
         self.setFixedSize(380, 220)
+        eff_theme = get_effective_theme(config.get("theme", "system"))
+        self.setStyleSheet(get_stylesheet(eff_theme))
         self.recorder = AudioRecorder()
         self.recorded_file: Optional[str] = None
 
@@ -149,12 +152,16 @@ class SettingsDialog(QDialog):
         super().__init__(parent)
         self.setWindowTitle("Settings & Offline Models")
         self.setMinimumSize(560, 480)
+        eff_theme = get_effective_theme(config.get("theme", "system"))
+        self.setStyleSheet(get_stylesheet(eff_theme))
         self.download_worker: Optional[ModelDownloadWorker] = None
 
         self._init_ui()
         self._refresh_models_table()
 
     def _init_ui(self):
+        eff_theme = get_effective_theme(config.get("theme", "system"))
+        is_dark = eff_theme == "dark"
         layout = QVBoxLayout(self)
         layout.setSpacing(16)
 
@@ -220,7 +227,7 @@ class SettingsDialog(QDialog):
             "Speaker detection uses offline CAM++ ONNX embeddings (28MB). "
             "No internet or cloud tokens needed."
         )
-        lbl_info.setStyleSheet("color: #666; font-size: 11px;")
+        lbl_info.setStyleSheet(f"color: {'#a0aec0' if is_dark else '#666666'}; font-size: 11px;")
         lbl_info.setWordWrap(True)
         diar_layout.addWidget(lbl_info)
 
@@ -240,7 +247,7 @@ class SettingsDialog(QDialog):
         models_layout.addWidget(self.table_models)
 
         self.lbl_download_status = QLabel("")
-        self.lbl_download_status.setStyleSheet("color: #0067c0; font-weight: bold;")
+        self.lbl_download_status.setStyleSheet(f"color: {'#4dabf7' if is_dark else '#0067c0'}; font-weight: bold;")
         models_layout.addWidget(self.lbl_download_status)
 
         layout.addWidget(grp_models)
@@ -305,18 +312,21 @@ class AboutDialog(QDialog):
         super().__init__(parent)
         self.setWindowTitle("About VoiceNotes")
         self.setFixedSize(450, 340)
+        eff_theme = get_effective_theme(config.get("theme", "system"))
+        self.setStyleSheet(get_stylesheet(eff_theme))
+        is_dark = eff_theme == "dark"
 
         layout = QVBoxLayout(self)
         layout.setContentsMargins(24, 24, 24, 24)
         layout.setSpacing(14)
 
         title = QLabel("🎙️ VoiceNotes")
-        title.setStyleSheet("font-size: 22px; font-weight: bold; color: #0067c0;")
+        title.setStyleSheet(f"font-size: 22px; font-weight: bold; color: {'#4dabf7' if is_dark else '#0067c0'};")
         title.setAlignment(Qt.AlignmentFlag.AlignCenter)
         layout.addWidget(title)
 
         subtitle = QLabel("Offline Speech Transcriber with Speaker Tagging")
-        subtitle.setStyleSheet("font-size: 13px; color: #666; font-weight: 500;")
+        subtitle.setStyleSheet(f"font-size: 13px; color: {'#a0aec0' if is_dark else '#666666'}; font-weight: 500;")
         subtitle.setAlignment(Qt.AlignmentFlag.AlignCenter)
         layout.addWidget(subtitle)
 

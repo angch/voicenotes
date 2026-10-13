@@ -152,7 +152,7 @@ class MainWindow(QMainWindow):
         main_layout.setSpacing(8)
 
         # Top Speech & Audio Panel
-        self.panel_speech = QGroupBox("Speech & Audio Options")
+        self.panel_speech = QGroupBox("Speech && Audio Options")
         self.panel_speech.setObjectName("speechPanel")
         panel_layout = QVBoxLayout(self.panel_speech)
         panel_layout.setContentsMargins(10, 8, 10, 8)
@@ -541,18 +541,30 @@ class MainWindow(QMainWindow):
         theme_pref = config.get("theme", "system")
         eff_theme = get_effective_theme(theme_pref)
 
-        # Update Qt standard palette for native widgets
+        # Update Qt standard palette and application stylesheet for native widgets and dialogs
         app = QApplication.instance()
         if app is not None:
             app.setPalette(create_palette(eff_theme))
-
-        self.setStyleSheet(get_stylesheet(eff_theme))
+            app.setStyleSheet(get_stylesheet(eff_theme))
+        else:
+            self.setStyleSheet(get_stylesheet(eff_theme))
 
         if hasattr(self, "act_theme_system"):
             self.act_theme_system.setChecked(theme_pref == "system")
             self.act_theme_light.setChecked(theme_pref == "light")
             self.act_theme_dark.setChecked(theme_pref == "dark")
             self.act_dark.setChecked(eff_theme == "dark")
+
+        if hasattr(self, "btn_detect_speakers"):
+            self._update_detect_speakers_style()
+
+        if hasattr(self, "lbl_audio_name"):
+            if self.current_audio_file:
+                col = "#4dabf7" if eff_theme == "dark" else "#0067c0"
+                self.lbl_audio_name.setStyleSheet(f"color: {col}; font-weight: 500;")
+            else:
+                col = "#888888" if eff_theme == "dark" else "#666666"
+                self.lbl_audio_name.setStyleSheet(f"color: {col}; font-style: italic;")
 
         if hasattr(self, "speakers_panel"):
             self.speakers_panel.refresh()
@@ -653,16 +665,27 @@ class MainWindow(QMainWindow):
 
     def _update_detect_speakers_style(self):
         checked = self.btn_detect_speakers.isChecked()
+        is_dark = get_effective_theme(config.get("theme", "system")) == "dark"
         if checked:
             self.btn_detect_speakers.setText("👥 Detect speakers: ON")
-            self.btn_detect_speakers.setStyleSheet(
-                "QPushButton { background-color: #e7f3ff; color: #0067c0; border: 1px solid #0067c0; font-weight: 600; padding: 4px 10px; border-radius: 4px; }"
-            )
+            if is_dark:
+                self.btn_detect_speakers.setStyleSheet(
+                    "QPushButton { background-color: #1a365d; color: #63b3ed; border: 1px solid #3182ce; font-weight: 600; padding: 4px 10px; border-radius: 4px; }"
+                )
+            else:
+                self.btn_detect_speakers.setStyleSheet(
+                    "QPushButton { background-color: #e7f3ff; color: #0067c0; border: 1px solid #0067c0; font-weight: 600; padding: 4px 10px; border-radius: 4px; }"
+                )
         else:
             self.btn_detect_speakers.setText("👥 Detect speakers: OFF")
-            self.btn_detect_speakers.setStyleSheet(
-                "QPushButton { background-color: #f1f3f5; color: #6c757d; border: 1px solid #ced4da; padding: 4px 10px; border-radius: 4px; }"
-            )
+            if is_dark:
+                self.btn_detect_speakers.setStyleSheet(
+                    "QPushButton { background-color: #2b2b2b; color: #a0aec0; border: 1px solid #4a5568; padding: 4px 10px; border-radius: 4px; }"
+                )
+            else:
+                self.btn_detect_speakers.setStyleSheet(
+                    "QPushButton { background-color: #f1f3f5; color: #6c757d; border: 1px solid #ced4da; padding: 4px 10px; border-radius: 4px; }"
+                )
 
     def _increase_font(self):
         font = self.editor.font()
@@ -697,8 +720,10 @@ class MainWindow(QMainWindow):
         """Load an audio file into the player and prepare for transcription."""
         self.current_audio_file = file_path
         p = Path(file_path)
+        is_dark = get_effective_theme(config.get("theme", "system")) == "dark"
+        col = "#4dabf7" if is_dark else "#0067c0"
         self.lbl_audio_name.setText(f"{p.name} ({os.path.getsize(file_path)/(1024*1024):.1f} MB)")
-        self.lbl_audio_name.setStyleSheet("color: #0067c0; font-weight: 500;")
+        self.lbl_audio_name.setStyleSheet(f"color: {col}; font-weight: 500;")
         self.player_widget.load_file(file_path)
         self.btn_transcribe.setEnabled(True)
 

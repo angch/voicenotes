@@ -65,19 +65,19 @@ class FindReplaceBar(QFrame):
         self.btn_match_case = QPushButton("Aa")
         self.btn_match_case.setCheckable(True)
         self.btn_match_case.setToolTip("Match Case")
-        self.btn_match_case.setFixedWidth(30)
+        self.btn_match_case.setMinimumWidth(32)
         self.btn_match_case.toggled.connect(self._on_find_text_changed)
         row1.addWidget(self.btn_match_case)
 
         self.btn_prev = QPushButton("↑")
         self.btn_prev.setToolTip("Previous match (Shift+Enter / Shift+F3)")
-        self.btn_prev.setFixedWidth(28)
+        self.btn_prev.setMinimumWidth(30)
         self.btn_prev.clicked.connect(self.find_prev)
         row1.addWidget(self.btn_prev)
 
         self.btn_next = QPushButton("↓")
         self.btn_next.setToolTip("Next match (Enter / F3)")
-        self.btn_next.setFixedWidth(28)
+        self.btn_next.setMinimumWidth(30)
         self.btn_next.clicked.connect(self.find_next)
         row1.addWidget(self.btn_next)
 
@@ -89,7 +89,7 @@ class FindReplaceBar(QFrame):
 
         self.btn_close = QPushButton("✕")
         self.btn_close.setToolTip("Close Find (Esc)")
-        self.btn_close.setFixedWidth(26)
+        self.btn_close.setMinimumWidth(28)
         self.btn_close.clicked.connect(self.close_bar)
         row1.addWidget(self.btn_close)
 
