@@ -5,6 +5,11 @@ from PyInstaller.utils.hooks import collect_data_files, collect_dynamic_libs
 
 block_cipher = None
 
+import glob
+import sys
+
+site_packages = os.path.join(sys.prefix, 'Lib', 'site-packages')
+
 datas = [
     ('models', 'models'),
     ('samples', 'samples'),
@@ -14,11 +19,25 @@ datas = [
 # Collect metadata and data files for machine learning packages
 datas += collect_data_files('faster_whisper')
 datas += collect_data_files('onnxruntime')
+datas += collect_data_files('sounddevice')
+datas += collect_data_files('soundfile')
 
 binaries = []
 binaries += collect_dynamic_libs('ctranslate2')
 binaries += collect_dynamic_libs('onnxruntime')
 binaries += collect_dynamic_libs('soundfile')
+binaries += collect_dynamic_libs('sounddevice')
+
+# Collect all vendor DLLs from *.libs directories (av/FFmpeg, numpy, scipy, portaudio)
+for lib_dir in ['av.libs', 'numpy.libs', 'scipy.libs', '_sounddevice_data/portaudio-binaries', '_soundfile_data', 'sklearn/.libs']:
+    target_dir = os.path.join(site_packages, *lib_dir.split('/'))
+    if os.path.isdir(target_dir):
+        for dll_file in glob.glob(os.path.join(target_dir, '*.dll')):
+            bname = os.path.basename(dll_file).lower()
+            if '32bit' in bname or 'arm64' in bname:
+                continue
+            binaries.append((dll_file, '.'))
+
 for pkg in ('nvidia.cublas', 'nvidia.cudnn', 'nvidia.cuda_nvrtc'):
     try:
         binaries += collect_dynamic_libs(pkg)
@@ -26,6 +45,13 @@ for pkg in ('nvidia.cublas', 'nvidia.cudnn', 'nvidia.cuda_nvrtc'):
         pass
 
 hiddenimports = [
+    'av',
+    'av.audio',
+    'av.container',
+    'av.subtitles',
+    'PIL',
+    'PIL.Image',
+    'PIL.ImageOps',
     'faster_whisper',
     'ctranslate2',
     'onnxruntime',
