@@ -66,6 +66,7 @@ from voicenotes.export.exporters import (
 )
 from voicenotes.gui.audio_player import AudioPlayerWidget
 from voicenotes.gui.dialogs import AboutDialog, RecordDialog, SettingsDialog
+from voicenotes.gui.find_bar import FindReplaceBar
 from voicenotes.gui.styles import get_stylesheet
 from voicenotes.gui.speakers_panel import SPEAKER_COLORS, SpeakersPanel
 from voicenotes.gui.transcription_worker import (
@@ -186,6 +187,7 @@ class MainWindow(QMainWindow):
 
         # Row 2: Integrated Audio Player
         self.player_widget = AudioPlayerWidget(self)
+        self.player_widget.position_changed.connect(self._on_player_position_changed)
         panel_layout.addWidget(self.player_widget)
 
         # Row 3: Progress Bar & Status (Hidden when idle)
@@ -215,10 +217,20 @@ class MainWindow(QMainWindow):
         # Splitter: Central Notepad Text Editor (Left) + Speakers Panel (Right)
         self.splitter = QSplitter(Qt.Orientation.Horizontal)
 
+        editor_container = QWidget()
+        editor_layout = QVBoxLayout(editor_container)
+        editor_layout.setContentsMargins(0, 0, 0, 0)
+        editor_layout.setSpacing(0)
+
         self.editor = NotepadTextEdit(self)
         self.editor.setFont(QFont("Consolas", config.get("font_size", 13)))
         self.editor.textChanged.connect(self._on_text_modified)
-        self.splitter.addWidget(self.editor)
+
+        self.find_bar = FindReplaceBar(self.editor, self)
+        editor_layout.addWidget(self.find_bar)
+        editor_layout.addWidget(self.editor, stretch=1)
+
+        self.splitter.addWidget(editor_container)
 
         self.speakers_panel = SpeakersPanel(self)
         self.speakers_panel.speaker_renamed.connect(self._on_speaker_renamed)
@@ -230,6 +242,7 @@ class MainWindow(QMainWindow):
         self.splitter.setSizes([720, 240])
 
         main_layout.addWidget(self.splitter, stretch=1)
+        self.setAcceptDrops(True)
 
         # Status Bar
         self.status_bar = QStatusBar(self)
@@ -341,6 +354,28 @@ class MainWindow(QMainWindow):
         act_copy_plain.setShortcut("Ctrl+Shift+C")
         act_copy_plain.triggered.connect(self._copy_plain_text)
         menu_edit.addAction(act_copy_plain)
+
+        menu_edit.addSeparator()
+
+        act_find = QAction("&Find in Note...", self)
+        act_find.setShortcut("Ctrl+F")
+        act_find.triggered.connect(self._on_find)
+        menu_edit.addAction(act_find)
+
+        act_find_next = QAction("Find &Next", self)
+        act_find_next.setShortcut("F3")
+        act_find_next.triggered.connect(self._on_find_next)
+        menu_edit.addAction(act_find_next)
+
+        act_find_prev = QAction("Find &Previous", self)
+        act_find_prev.setShortcut("Shift+F3")
+        act_find_prev.triggered.connect(self._on_find_prev)
+        menu_edit.addAction(act_find_prev)
+
+        act_replace = QAction("&Replace...", self)
+        act_replace.setShortcut("Ctrl+H")
+        act_replace.triggered.connect(self._on_replace)
+        menu_edit.addAction(act_replace)
 
         # --- Audio Menu ---
         menu_audio = menubar.addMenu("&Audio")
@@ -454,6 +489,93 @@ class MainWindow(QMainWindow):
         new_theme = "dark" if self.act_dark.isChecked() else "light"
         config.set("theme", new_theme)
         self._apply_theme()
+        if self.current_result:
+            self._render_transcript_html(self.current_result)
+        self.speakers_panel.refresh()
+
+    def _on_find(self):
+        selected = self.editor.textCursor().selectedText()
+        self.find_bar.show_find(initial_query=selected)
+
+    def _on_find_next(self):
+        if self.find_bar.isVisible():
+            self.find_bar.find_next()
+        else:
+            self._on_find()
+
+    def _on_find_prev(self):
+        if self.find_bar.isVisible():
+            self.find_bar.find_prev()
+        else:
+            self._on_find()
+
+    def _on_replace(self):
+        selected = self.editor.textCursor().selectedText()
+        self.find_bar.show_replace(initial_query=selected)
+
+    def _on_player_position_changed(self, seconds: float):
+        """Track audio position and display active segment snippet in status bar."""
+        if not self.current_result or not self.player_widget.player.playbackState():
+            return
+        for seg in self.current_result.segments:
+            if seg.start <= seconds <= seg.end:
+                spk = f"[{seg.speaker}] " if seg.speaker else ""
+                snippet = seg.text.strip()
+                if len(snippet) > 45:
+                    snippet = snippet[:42] + "..."
+                self.status_bar.showMessage(
+                    f"▶ Playing: {format_timestamp(seconds)} | {spk}{snippet}",
+                    1000,
+                )
+                break
+
+    def dragEnterEvent(self, event):
+        if event.mimeData().hasUrls():
+            event.acceptProposedAction()
+        else:
+            event.ignore()
+
+    def dragMoveEvent(self, event):
+        if event.mimeData().hasUrls():
+            event.acceptProposedAction()
+        else:
+            event.ignore()
+
+    def dropEvent(self, event):
+        urls = event.mimeData().urls()
+        if not urls:
+            return
+
+        audio_exts = {".wav", ".mp3", ".m4a", ".flac", ".ogg", ".aac", ".webm", ".mp4", ".mkv", ".wma"}
+        text_exts = {".txt", ".srt", ".vtt", ".json", ".md"}
+
+        for url in urls:
+            file_path = url.toLocalFile()
+            if not file_path:
+                continue
+            p = Path(file_path)
+            if p.suffix.lower() in audio_exts:
+                self.load_audio_file(str(p.resolve()))
+                event.acceptProposedAction()
+                return
+            elif p.suffix.lower() in text_exts:
+                self.load_text_file(str(p.resolve()))
+                event.acceptProposedAction()
+                return
+
+        event.acceptProposedAction()
+
+    def load_text_file(self, file_path: str):
+        """Load text or transcript file into the editor."""
+        try:
+            with open(file_path, "r", encoding="utf-8", errors="replace") as f:
+                content = f.read()
+            self.editor.setPlainText(content)
+            self.current_text_file = file_path
+            self._is_modified = False
+            self._update_status_bar()
+        except Exception as e:
+            QMessageBox.critical(self, "Open Error", f"Failed to open text file:\n{e}")
 
     def _toggle_speech_panel(self):
         self.panel_speech.setVisible(self.act_speech_panel.isChecked())
@@ -788,13 +910,14 @@ class MainWindow(QMainWindow):
         self._update_status_bar()
 
     def _on_open_text_file(self):
-        file_path, _ = QFileDialog.getOpenFileName(self, "Open Text File", "", "Text Files (*.txt);;All Files (*.*)")
+        file_path, _ = QFileDialog.getOpenFileName(
+            self,
+            "Open Text File",
+            "",
+            "Text Files (*.txt *.md *.srt *.vtt *.json);;All Files (*.*)",
+        )
         if file_path:
-            with open(file_path, "r", encoding="utf-8", errors="ignore") as f:
-                self.editor.setPlainText(f.read())
-            self.current_text_file = file_path
-            self._is_modified = False
-            self._update_status_bar()
+            self.load_text_file(file_path)
 
     def _on_save_file(self):
         if not self.current_text_file:

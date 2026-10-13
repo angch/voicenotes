@@ -21,10 +21,11 @@ from PyQt6.QtWidgets import (
     QWidget,
 )
 
+from voicenotes.config import config
 from voicenotes.engine.audio_utils import format_timestamp
 
 
-# Distinct palette colors for up to 8 speakers
+# Distinct palette colors for up to 8 speakers (Light mode: fg, bg)
 SPEAKER_COLORS = [
     ("#0067c0", "#e7f3ff"),  # Blue
     ("#087f5b", "#ebfbee"),  # Green
@@ -34,6 +35,18 @@ SPEAKER_COLORS = [
     ("#1098ad", "#e6fcf5"),  # Teal
     ("#f08c00", "#fff9db"),  # Yellow
     ("#495057", "#f1f3f5"),  # Gray
+]
+
+# Distinct palette colors for dark mode (fg, bg)
+SPEAKER_COLORS_DARK = [
+    ("#4dabf7", "#182a3d"),  # Blue
+    ("#40c057", "#133120"),  # Green
+    ("#ff922b", "#3d2212"),  # Orange
+    ("#b197fc", "#2a1f47"),  # Purple
+    ("#f06595", "#3d1326"),  # Pink
+    ("#38d9a9", "#113832"),  # Teal
+    ("#fcc419", "#3d3210"),  # Yellow
+    ("#ced4da", "#2b2f33"),  # Gray
 ]
 
 
@@ -56,14 +69,20 @@ class SpeakerCard(QFrame):
         self.speaker_name = speaker_name
         self.first_turn_start = first_turn_start
 
-        fg_color, bg_color = SPEAKER_COLORS[color_idx % len(SPEAKER_COLORS)]
+        is_dark = config.get("theme", "light") == "dark"
+        palette = SPEAKER_COLORS_DARK if is_dark else SPEAKER_COLORS
+        fg_color, bg_color = palette[color_idx % len(palette)]
+        border_col = "#383838" if is_dark else "#d0d0d0"
+        self._input_bg = "#262626" if is_dark else "#ffffff"
+        self._input_border = "#444444" if is_dark else "#c0c0c0"
+        self._stats_col = "#aaaaaa" if is_dark else "#555555"
 
         self.setFrameShape(QFrame.Shape.StyledPanel)
         self.setStyleSheet(
             f"""
             SpeakerCard {{
                 background-color: {bg_color};
-                border: 1px solid #d0d0d0;
+                border: 1px solid {border_col};
                 border-left: 4px solid {fg_color};
                 border-radius: 6px;
                 margin-bottom: 6px;
@@ -86,8 +105,8 @@ class SpeakerCard(QFrame):
                 font-weight: 600;
                 font-size: 13px;
                 color: {fg_color};
-                background: #ffffff;
-                border: 1px solid #c0c0c0;
+                background: {self._input_bg};
+                border: 1px solid {self._input_border};
                 border-radius: 4px;
                 padding: 3px 6px;
             }}
@@ -127,7 +146,7 @@ class SpeakerCard(QFrame):
         dur_str = format_timestamp(total_duration)
         turns_text = f"{turn_count} {'turn' if turn_count == 1 else 'turns'} ({dur_str})"
         self.lbl_stats = QLabel(turns_text)
-        self.lbl_stats.setStyleSheet("font-size: 11px; color: #555555;")
+        self.lbl_stats.setStyleSheet(f"font-size: 11px; color: {self._stats_col};")
         card_layout.addWidget(self.lbl_stats)
 
     def _on_rename_finished(self):
@@ -151,6 +170,7 @@ class SpeakersPanel(QWidget):
         super().__init__(parent)
         self.setMinimumWidth(210)
         self.setMaximumWidth(320)
+        self._last_segments: List[any] = []
 
         self._init_ui()
 
@@ -163,7 +183,7 @@ class SpeakersPanel(QWidget):
         header = QHBoxLayout()
         header.setContentsMargins(4, 2, 4, 2)
         self.lbl_title = QLabel("👥 Speakers")
-        self.lbl_title.setStyleSheet("font-weight: 600; font-size: 13px; color: #333333;")
+        self.lbl_title.setStyleSheet("font-weight: 600; font-size: 13px;")
         header.addWidget(self.lbl_title)
 
         self.lbl_count = QLabel("(0)")
@@ -215,8 +235,14 @@ class SpeakersPanel(QWidget):
         self.cards_layout.addWidget(self.lbl_placeholder)
         self.lbl_count.setText("(0)")
 
+    def refresh(self):
+        """Refresh cards styling to match current theme."""
+        if self._last_segments:
+            self.update_speakers(self._last_segments)
+
     def update_speakers(self, segments: List[any]):
         """Populate panel with speakers detected across segments."""
+        self._last_segments = list(segments) if segments else []
         # Clear existing
         while self.cards_layout.count():
             item = self.cards_layout.takeAt(0)

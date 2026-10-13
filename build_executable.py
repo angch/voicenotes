@@ -20,6 +20,31 @@ def build():
     print(" VoiceNotes Standalone Executable Builder (Zero-Python)  ")
     print("=========================================================")
 
+    # Clean previous build artifacts safely
+    def safe_remove_dir(d: Path):
+        if not d.exists():
+            return
+        for root, dirs, files in os.walk(d, topdown=False):
+            for f in files:
+                p = os.path.join(root, f)
+                try:
+                    os.chmod(p, 0o777)
+                    os.remove(p)
+                except Exception:
+                    pass
+            for dir_name in dirs:
+                p = os.path.join(root, dir_name)
+                try:
+                    os.rmdir(p)
+                except Exception:
+                    pass
+        try:
+            os.rmdir(d)
+        except Exception:
+            pass
+
+    safe_remove_dir(dist_dir)
+
     # 1. Ensure models directory has CAM++ diarization model
     models_dir = root_dir / "models"
     cam_model = models_dir / "voxceleb_CAM++.onnx"

@@ -61,6 +61,14 @@ class ModelManager:
         if dest.exists():
             return dest
 
+        # If already cached in HF cache, copy it locally without downloading
+        cached = cls.get_diarization_model_path()
+        if cached and cached.exists() and cached.resolve() != dest.resolve():
+            import shutil
+
+            shutil.copy2(cached, dest)
+            return dest
+
         if progress_callback:
             progress_callback(f"Downloading speaker diarization model ({cls.CAM_PLUS_FILENAME})...")
 
@@ -72,28 +80,36 @@ class ModelManager:
         return Path(downloaded_path)
 
     @classmethod
-    def is_whisper_model_available(cls, model_name: str) -> bool:
-        """Check if a Whisper model is already available locally."""
+    def get_whisper_model_path(cls, model_name: str) -> Optional[str]:
+        """Locate Whisper model directory locally, or None if not found."""
         from faster_whisper.utils import download_model
 
-        try:
-            # Check if directory exists in models_dir or HF cache
-            models_dir = cls.get_models_directory()
-            local_model_dir = models_dir / f"whisper-{model_name}"
-            if local_model_dir.exists() and (local_model_dir / "model.bin").exists():
-                return True
+        models_dir = cls.get_models_directory()
 
-            # Check faster_whisper cache
-            # If local_files_only succeeds, model is cached
-            download_model(model_name, output_dir=str(models_dir), local_files_only=True)
-            return True
+        # 1. Check local models dir (bundled or pre-downloaded)
+        candidate_dirs = [
+            models_dir / f"whisper-{model_name}",
+            models_dir / f"models--Systran--faster-whisper-{model_name}",
+            models_dir,
+        ]
+        for c in candidate_dirs:
+            if c.exists() and (c / "model.bin").exists():
+                return str(c)
+
+        # 2. Check default HF cache
+        try:
+            path = download_model(model_name, local_files_only=True)
+            if path and (Path(path) / "model.bin").exists():
+                return path
         except Exception:
-            # Also check default HF cache
-            try:
-                download_model(model_name, local_files_only=True)
-                return True
-            except Exception:
-                return False
+            pass
+
+        return None
+
+    @classmethod
+    def is_whisper_model_available(cls, model_name: str) -> bool:
+        """Check if a Whisper model is already available locally."""
+        return cls.get_whisper_model_path(model_name) is not None
 
     @classmethod
     def download_whisper_model(
@@ -104,12 +120,18 @@ class ModelManager:
         """Pre-download a Whisper model so it is ready offline."""
         from faster_whisper.utils import download_model
 
+        # Return immediately if already available offline
+        cached_path = cls.get_whisper_model_path(model_name)
+        if cached_path is not None:
+            return cached_path
+
         if progress_callback:
             progress_callback(f"Downloading Whisper {model_name} model for offline use...")
 
         models_dir = cls.get_models_directory()
-        models_dir.mkdir(parents=True, exist_ok=True)
-        model_path = download_model(model_name, output_dir=str(models_dir))
+        target_dir = models_dir / f"whisper-{model_name}"
+        target_dir.mkdir(parents=True, exist_ok=True)
+        model_path = download_model(model_name, output_dir=str(target_dir))
         return model_path
 
     @classmethod

@@ -132,18 +132,21 @@ class SpeechTranscriber:
         ):
             return self._model
 
-        models_dir = ModelManager.get_models_directory()
-        models_dir.mkdir(parents=True, exist_ok=True)
+        model_path = ModelManager.get_whisper_model_path(model_name)
+        if model_path is None:
+            model_path = ModelManager.download_whisper_model(
+                model_name,
+                progress_callback=progress_callback,
+            )
 
         if progress_callback:
             progress_callback(f"Loading Whisper '{model_name}' on {target_device.upper()}...")
 
         try:
             self._model = WhisperModel(
-                model_name,
+                model_path,
                 device=target_device,
                 compute_type=target_compute,
-                download_root=str(models_dir),
             )
             self._current_device = target_device
         except Exception as e:
@@ -152,10 +155,9 @@ class SpeechTranscriber:
                 if progress_callback:
                     progress_callback("CUDA unavailable, switching to CPU (INT8)...")
                 self._model = WhisperModel(
-                    model_name,
+                    model_path,
                     device="cpu",
                     compute_type="int8",
-                    download_root=str(models_dir),
                 )
                 self._current_device = "cpu"
             else:
@@ -222,7 +224,7 @@ class SpeechTranscriber:
                 temperature=0.0,
                 vad_filter=True,
                 vad_parameters=dict(min_silence_duration_ms=400),
-                word_timestamps=False,
+                word_timestamps=True,
             )
             detected_lang = info.language
             lang_prob = info.language_probability
@@ -240,7 +242,7 @@ class SpeechTranscriber:
                     temperature=0.0,
                     vad_filter=True,
                     vad_parameters=dict(min_silence_duration_ms=400),
-                    word_timestamps=False,
+                    word_timestamps=True,
                 )
                 detected_lang = info.language
                 lang_prob = info.language_probability

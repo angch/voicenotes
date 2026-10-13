@@ -17,26 +17,29 @@ VoiceNotes is a simple, intuitive desktop speech-to-text tool that works like Wi
 
 - **📝 Familiar "Notepad Lite" Experience**:
   - Clean, unencumbered text editor with standard menus (File, Edit, Speech, Audio, View, Help).
-  - Freely edit, correct typos, rename speaker labels, and take notes.
-  - Light and Dark modes matching Windows 11 design.
+  - **Inline Find & Replace (`Ctrl+F` / `Ctrl+H`)**: Quick search bar with match count, match case, Next/Previous, and Replace All.
+  - **Drag & Drop Support**: Drop any audio/video file straight into the app to transcribe, or drop text/subtitles to open.
+  - Light and Dark modes matching Windows 11 design with auto-refreshing themes.
 
-- **⏱️ Interactive Clickable Timestamps**:
+- **⏱️ Interactive Clickable Timestamps & Playback Tracking**:
   - Every transcription block has a timestamp (e.g., `[00:14 - 00:17]`).
   - Clicking any timestamp instantly seeks the audio player to that exact moment and plays it!
+  - Real-time status bar tracking as audio plays.
 
 - **👥 Multi-Speaker Tagging (Diarization)**:
   - Optionally labels different speakers (`Speaker 1:`, `Speaker 2:`...).
   - Uses offline **CAM++ ONNX** voice embeddings with hierarchical clustering.
+  - Dedicated **Speakers Panel**: click-to-rename speakers across the note and preview speaker audio samples.
   - No Hugging Face account, gated model agreements, or API tokens required.
 
 - **⚡ Blazing Fast & Fully Offline**:
-  - Powered by **Faster-Whisper** (CTranslate2 inference engine).
+  - Powered by **Faster-Whisper** (CTranslate2 inference engine) with direct offline model resolution.
   - Uses INT8 quantization for fast execution on standard laptops and desktops without dedicated GPUs.
   - Automatically activates NVIDIA CUDA acceleration when available.
 
-- **🎙️ Built-in Microphone Recording**:
+- **🎙️ Live Microphone Dictation & Recording**:
+  - Direct live streaming into notes as you speak, with automatic speaker identification upon completion.
   - One-click record modal with live timer.
-  - Instantly transcribes when you finish speaking.
 
 - **📤 Multi-Format Export**:
   - **Plain Text (`.txt`)**: Clean text or with timecoded speakers.
@@ -139,7 +142,9 @@ voicenotes/
 │   └── gui/
 │       ├── audio_player.py        # Audio playback widget with timeline seek
 │       ├── dialogs.py             # Settings, Recording, and About dialogs
+│       ├── find_bar.py            # Inline Find & Replace bar with live match counting
 │       ├── main_window.py         # "Notepad Lite" main window
+│       ├── speakers_panel.py      # Multi-speaker management with click-to-rename
 │       ├── styles.py              # Light and Dark Windows themes
 │       └── transcription_worker.py# Background QThread for non-blocking UI
 ├── samples/                       # Test audio clips and documentation
@@ -147,9 +152,10 @@ voicenotes/
 │   ├── jfk.flac
 │   ├── single_mic_male.wav
 │   └── single_mic_female.flac
-├── tests/                         # Automated unit test suite
+├── tests/                         # Automated unit & GUI test suite (28 tests)
 │   ├── test_engine.py
-│   └── test_exporters.py
+│   ├── test_exporters.py
+│   └── test_gui.py
 ├── scripts/
 │   └── download_models.py         # Pre-download models for offline distribution
 ├── build_executable.py            # Builds standalone VoiceNotes.exe
@@ -171,7 +177,10 @@ voicenotes/
 | `Ctrl + S` | Save Note |
 | `Ctrl + Shift + S` | Save Note As... |
 | `Ctrl + Shift + O` | Open Audio or Video File |
-| `Ctrl + R` | Record from Microphone |
+| `Ctrl + R` | Record / Dictate from Microphone |
+| `Ctrl + F` | Find in Note |
+| `Ctrl + H` | Replace in Note |
+| `F3` / `Shift + F3` | Find Next / Previous |
 | `F5` | Transcribe Loaded Audio |
 | `Ctrl + P` / `Space` | Play / Pause Audio |
 | `Ctrl + Left` | Skip Back 5 Seconds |

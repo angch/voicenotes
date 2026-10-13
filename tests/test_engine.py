@@ -71,3 +71,21 @@ def test_transcriber_single_speaker():
     assert len(result.segments) >= 1
     full_text = result.full_text.lower()
     assert "fellow americans" in full_text or "country" in full_text
+
+
+def test_transcriber_multi_speaker_diarization():
+    two_speakers_path = Path("samples/two_speakers_conversation.wav")
+    assert two_speakers_path.exists()
+
+    transcriber = SpeechTranscriber()
+    result = transcriber.transcribe(
+        two_speakers_path,
+        model_name="tiny",
+        diarize=True,
+    )
+    assert result is not None
+    assert result.num_speakers >= 2
+    speaker_set = {seg.speaker for seg in result.segments if seg.speaker}
+    assert len(speaker_set) >= 2
+    assert "Speaker 1" in speaker_set
+    assert "Speaker 2" in speaker_set

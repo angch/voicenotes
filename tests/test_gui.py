@@ -284,3 +284,119 @@ def test_live_recording_toggle_and_stream(app_window):
     assert "Record" in win.btn_record.text()
     assert win.btn_transcribe.isEnabled() is True
     assert win.current_result is not None
+
+
+def test_find_and_replace_bar(app_window):
+    """Test inline find and replace bar functionality."""
+    win = app_window
+    win.editor.setPlainText("The quick brown fox jumps over the lazy dog. The fox is fast.")
+
+    # Show find bar
+    win._on_find()
+    assert win.find_bar.isVisible() is True
+
+    # Search for "fox"
+    win.find_bar.edit_find.setText("fox")
+    assert "2 matches" in win.find_bar.lbl_match_count.text()
+
+    # Find next
+    found = win.find_bar.find_next()
+    assert found is True
+
+    # Show replace mode
+    win._on_replace()
+    assert win.find_bar.frame_replace.isVisible() is True
+
+    # Replace "fox" with "cat"
+    win.find_bar.edit_replace.setText("cat")
+    win.find_bar.replace_current()
+    assert "cat" in win.editor.toPlainText()
+
+    # Replace all remaining "fox"
+    win.find_bar.replace_all()
+    assert "fox" not in win.editor.toPlainText()
+    assert win.editor.toPlainText().count("cat") == 2
+
+    # Close find bar
+    win.find_bar.close_bar()
+    assert win.find_bar.isVisible() is False
+
+
+def test_drag_and_drop_files(app_window):
+    """Test drag and drop handling of audio and text files."""
+    from PyQt6.QtCore import QMimeData, QUrl
+    from PyQt6.QtGui import QDropEvent
+
+    win = app_window
+    jfk_sample = Path("samples/jfk.flac").resolve()
+    assert jfk_sample.exists()
+
+    # Test load text file
+    readme_path = Path("README.md").resolve()
+    win.load_text_file(str(readme_path))
+    assert "VoiceNotes" in win.editor.toPlainText()
+    assert win.current_text_file == str(readme_path)
+
+    # Test load audio via load_audio_file
+    win.load_audio_file(str(jfk_sample))
+    assert win.current_audio_file == str(jfk_sample)
+    assert win.btn_transcribe.isEnabled() is True
+
+
+def test_playback_tracking_status(app_window):
+    """Test status bar tracking playback position across segments."""
+    from voicenotes.engine.transcriber import TranscriptionResult, TranscriptionSegment
+    win = app_window
+
+    seg1 = TranscriptionSegment(id=1, start=1.0, end=4.0, text="First speaking part", speaker="Speaker 1")
+    seg2 = TranscriptionSegment(id=2, start=5.0, end=8.0, text="Second speaking part", speaker="Speaker 2")
+    win.current_result = TranscriptionResult(
+        audio_path="test.wav",
+        duration=10.0,
+        language="en",
+        language_probability=1.0,
+        segments=[seg1, seg2],
+        model_name="small",
+        num_speakers=2,
+        diarization_enabled=True,
+    )
+
+    # Fake playing state in player
+    from PyQt6.QtMultimedia import QMediaPlayer
+    # Trigger position change at 2.5s (during seg1)
+    win.player_widget.player.playbackState = lambda: QMediaPlayer.PlaybackState.PlayingState
+    win._on_player_position_changed(2.5)
+    # Status bar should indicate playing segment
+    assert "Speaker 1" in win.status_bar.currentMessage() or "Playing" in win.status_bar.currentMessage()
+
+
+def test_theme_toggle_with_rendered_transcript(app_window):
+    """Test switching theme re-renders transcript HTML and updates speakers panel."""
+    from voicenotes.engine.transcriber import TranscriptionResult, TranscriptionSegment
+    win = app_window
+
+    seg1 = TranscriptionSegment(id=1, start=0.0, end=2.0, text="Line one", speaker="Alice")
+    win.current_result = TranscriptionResult(
+        audio_path="test.wav",
+        duration=2.0,
+        language="en",
+        language_probability=1.0,
+        segments=[seg1],
+        model_name="tiny",
+        num_speakers=1,
+        diarization_enabled=True,
+    )
+    win._render_transcript_html(win.current_result)
+    win.speakers_panel.update_speakers([seg1])
+
+    # Switch to Dark Mode
+    win.act_dark.setChecked(True)
+    win._toggle_theme()
+    assert config.get("theme") == "dark"
+    assert "time:0.00" in win.editor.toHtml()
+
+    # Switch back to Light Mode
+    win.act_dark.setChecked(False)
+    win._toggle_theme()
+    assert config.get("theme") == "light"
+
