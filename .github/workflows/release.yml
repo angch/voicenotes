@@ -51,9 +51,9 @@ jobs:
           Set-Service -Name Audiosrv -StartupType Automatic -ErrorAction SilentlyContinue
           Start-Service -Name Audiosrv -ErrorAction SilentlyContinue
 
-      - name: Pre-download Models for Tests & Packaging
+      - name: Pre-download Offline Models for Packaging
         run: |
-          uv run -- python -c "from voicenotes.engine.model_manager import ModelManager; ModelManager.download_diarization_model(); ModelManager.download_whisper_model('tiny')"
+          uv run -- python build_executable.py --models tiny,base,diarization --skip-pyinstaller
 
       - name: Run Test Suite
         run: |
@@ -61,7 +61,7 @@ jobs:
 
       - name: Build Standalone Executable
         run: |
-          uv run -- python build_executable.py
+          uv run -- python build_executable.py --models tiny,base,diarization
 
       - name: Determine Version
         id: version_info

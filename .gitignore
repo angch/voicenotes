@@ -26,6 +26,7 @@ settings.local.json
 
 # Model caches and lock files
 models/models--*
+models/whisper-*/
 models/.locks/
 models/blobs/
 models/CACHEDIR.TAG

@@ -25,12 +25,50 @@ class ModelManager:
         return get_models_dir()
 
     @classmethod
+    def get_search_directories(cls) -> list[Path]:
+        """Return all local and bundled directories where offline models might reside."""
+        from voicenotes.config import get_app_dir, get_bundle_dir, get_models_dir
+
+        candidates = [
+            get_models_dir(),
+            get_bundle_dir() / "models",
+            get_app_dir() / "models",
+            get_app_dir() / "_internal" / "models",
+            Path(os.path.expanduser("~")) / ".cache" / "voicenotes" / "models",
+        ]
+        unique_dirs: list[Path] = []
+        seen = set()
+        for d in candidates:
+            try:
+                resolved = d.resolve()
+                if resolved not in seen:
+                    seen.add(resolved)
+                    if d.exists():
+                        unique_dirs.append(d)
+            except Exception:
+                pass
+        return unique_dirs
+
+    @classmethod
+    def get_writable_models_directory(cls) -> Path:
+        """Return a directory where models can be safely downloaded and written."""
+        from voicenotes.config import get_app_dir
+
+        local_dir = get_app_dir() / "models"
+        if local_dir.exists() and os.access(str(local_dir), os.W_OK):
+            return local_dir
+
+        user_cache = Path(os.path.expanduser("~")) / ".cache" / "voicenotes" / "models"
+        user_cache.mkdir(parents=True, exist_ok=True)
+        return user_cache
+
+    @classmethod
     def get_diarization_model_path(cls) -> Optional[Path]:
         """Locate CAM++ ONNX model locally, or None if not found."""
-        models_dir = cls.get_models_directory()
-        candidate = models_dir / cls.CAM_PLUS_FILENAME
-        if candidate.exists():
-            return candidate
+        for models_dir in cls.get_search_directories():
+            candidate = models_dir / cls.CAM_PLUS_FILENAME
+            if candidate.exists():
+                return candidate
 
         # Check default huggingface hub cache location
         try:
@@ -52,16 +90,24 @@ class ModelManager:
         return cls.get_diarization_model_path() is not None
 
     @classmethod
-    def download_diarization_model(cls, progress_callback: Optional[Callable[[str], None]] = None) -> Path:
+    def download_diarization_model(
+        cls,
+        target_dir: Optional[Path] = None,
+        progress_callback: Optional[Callable[[str], None]] = None,
+    ) -> Path:
         """Download CAM++ ONNX speaker model into the models directory."""
-        models_dir = cls.get_models_directory()
+        if target_dir is None:
+            models_dir = cls.get_writable_models_directory()
+        else:
+            models_dir = target_dir
+
         models_dir.mkdir(parents=True, exist_ok=True)
         dest = models_dir / cls.CAM_PLUS_FILENAME
 
         if dest.exists():
             return dest
 
-        # If already cached in HF cache, copy it locally without downloading
+        # If already cached in HF cache or elsewhere, copy it locally without re-downloading
         cached = cls.get_diarization_model_path()
         if cached and cached.exists() and cached.resolve() != dest.resolve():
             import shutil
@@ -84,19 +130,17 @@ class ModelManager:
         """Locate Whisper model directory locally, or None if not found."""
         from faster_whisper.utils import download_model
 
-        models_dir = cls.get_models_directory()
+        for models_dir in cls.get_search_directories():
+            candidate_dirs = [
+                models_dir / f"whisper-{model_name}",
+                models_dir / f"models--Systran--faster-whisper-{model_name}",
+                models_dir,
+            ]
+            for c in candidate_dirs:
+                if c.exists() and (c / "model.bin").exists():
+                    return str(c)
 
-        # 1. Check local models dir (bundled or pre-downloaded)
-        candidate_dirs = [
-            models_dir / f"whisper-{model_name}",
-            models_dir / f"models--Systran--faster-whisper-{model_name}",
-            models_dir,
-        ]
-        for c in candidate_dirs:
-            if c.exists() and (c / "model.bin").exists():
-                return str(c)
-
-        # 2. Check default HF cache
+        # Check default HF cache
         try:
             path = download_model(model_name, local_files_only=True)
             if path and (Path(path) / "model.bin").exists():
@@ -115,21 +159,38 @@ class ModelManager:
     def download_whisper_model(
         cls,
         model_name: str,
+        target_dir: Optional[Path] = None,
         progress_callback: Optional[Callable[[str], None]] = None,
     ) -> str:
         """Pre-download a Whisper model so it is ready offline."""
         from faster_whisper.utils import download_model
 
-        # Return immediately if already available offline
+        if target_dir is None:
+            models_dir = cls.get_writable_models_directory()
+            target_dir = models_dir / f"whisper-{model_name}"
+
+        # Return immediately if already available at target_dir
+        if (target_dir / "model.bin").exists():
+            return str(target_dir)
+
+        # If already cached in HF cache or another search path, copy it locally
         cached_path = cls.get_whisper_model_path(model_name)
-        if cached_path is not None:
-            return cached_path
+        if (
+            cached_path
+            and Path(cached_path).exists()
+            and Path(cached_path).resolve() != target_dir.resolve()
+        ):
+            import shutil
+
+            target_dir.mkdir(parents=True, exist_ok=True)
+            for f in Path(cached_path).glob("*"):
+                if f.is_file():
+                    shutil.copy2(f, target_dir / f.name)
+            return str(target_dir)
 
         if progress_callback:
             progress_callback(f"Downloading Whisper {model_name} model for offline use...")
 
-        models_dir = cls.get_models_directory()
-        target_dir = models_dir / f"whisper-{model_name}"
         target_dir.mkdir(parents=True, exist_ok=True)
         model_path = download_model(model_name, output_dir=str(target_dir))
         return model_path

@@ -4,6 +4,7 @@ portable Windows distribution folder (dist/VoiceNotes/VoiceNotes.exe).
 No Python installation is required on the user's machine.
 """
 
+import argparse
 import os
 import shutil
 import subprocess
@@ -11,7 +12,23 @@ import sys
 from pathlib import Path
 
 
+def parse_args():
+    parser = argparse.ArgumentParser(description="VoiceNotes Standalone Executable & Model Bundler")
+    parser.add_argument(
+        "--models",
+        default="tiny,base,diarization",
+        help="Comma-separated models to pre-bundle (e.g. 'tiny,base,diarization', 'all', or 'none'). Default: tiny,base,diarization",
+    )
+    parser.add_argument(
+        "--skip-pyinstaller",
+        action="store_true",
+        help="Download models into ./models/ without executing PyInstaller",
+    )
+    return parser.parse_args()
+
+
 def build():
+    args = parse_args()
     root_dir = Path(__file__).resolve().parent
     dist_dir = root_dir / "dist"
     build_dir = root_dir / "build"
@@ -45,14 +62,41 @@ def build():
 
     safe_remove_dir(dist_dir)
 
-    # 1. Ensure models directory has CAM++ diarization model
+    # 1. Ensure requested models are pre-bundled in models/
     models_dir = root_dir / "models"
-    cam_model = models_dir / "voxceleb_CAM++.onnx"
-    if not cam_model.exists():
-        print("Pre-downloading CAM++ speaker diarization model...")
-        from voicenotes.engine.model_manager import ModelManager
+    models_dir.mkdir(parents=True, exist_ok=True)
 
-        ModelManager.download_diarization_model()
+    models_str = args.models.strip().lower()
+    if models_str == "none":
+        selected_models = []
+    elif models_str == "all":
+        selected_models = ["tiny", "base", "small", "medium", "diarization"]
+    else:
+        selected_models = [m.strip() for m in models_str.split(",") if m.strip()]
+
+    print(f"\n[Models Configuration] Selected for bundling: {', '.join(selected_models) if selected_models else 'None'}")
+    from voicenotes.engine.model_manager import ModelManager
+
+    for m in selected_models:
+        if m == "diarization":
+            cam_dest = models_dir / "voxceleb_CAM++.onnx"
+            if not cam_dest.exists():
+                print(" -> Pre-downloading CAM++ speaker diarization model...")
+                ModelManager.download_diarization_model(target_dir=models_dir, progress_callback=print)
+            else:
+                print(f" -> CAM++ Diarization model ready ({cam_dest.stat().st_size / (1024*1024):.1f} MB)")
+        else:
+            w_dest = models_dir / f"whisper-{m}"
+            if not (w_dest / "model.bin").exists():
+                print(f" -> Pre-downloading Whisper '{m}' model into models/whisper-{m}...")
+                ModelManager.download_whisper_model(m, target_dir=w_dest, progress_callback=print)
+            else:
+                bin_size = (w_dest / "model.bin").stat().st_size / (1024*1024)
+                print(f" -> Whisper '{m}' model ready ({bin_size:.1f} MB)")
+
+    if args.skip_pyinstaller:
+        print("\n[Done] Models downloaded successfully. Skipping PyInstaller (--skip-pyinstaller).")
+        return
 
     # 2. Run PyInstaller
     print("\nRunning PyInstaller with VoiceNotes.spec...")
