@@ -14,6 +14,7 @@ from typing import Optional
 from PyQt6.QtCore import QPoint, Qt, QTimer, QUrl, pyqtSlot
 from PyQt6.QtGui import (
     QAction,
+    QActionGroup,
     QColor,
     QFont,
     QIcon,
@@ -67,8 +68,12 @@ from voicenotes.export.exporters import (
 from voicenotes.gui.audio_player import AudioPlayerWidget
 from voicenotes.gui.dialogs import AboutDialog, RecordDialog, SettingsDialog
 from voicenotes.gui.find_bar import FindReplaceBar
-from voicenotes.gui.styles import get_stylesheet
-from voicenotes.gui.speakers_panel import SPEAKER_COLORS, SpeakersPanel
+from voicenotes.gui.styles import create_palette, get_effective_theme, get_stylesheet
+from voicenotes.gui.speakers_panel import (
+    SPEAKER_COLORS,
+    SPEAKER_COLORS_DARK,
+    SpeakersPanel,
+)
 from voicenotes.gui.transcription_worker import (
     LiveTranscriptionWorker,
     TranscriptionWorker,
@@ -126,6 +131,14 @@ class MainWindow(QMainWindow):
         self._init_ui()
         self._apply_theme()
         self._update_status_bar()
+
+        # Dynamic OS Theme Change Listener
+        app = QApplication.instance()
+        if app is not None:
+            try:
+                app.styleHints().colorSchemeChanged.connect(self._on_system_color_scheme_changed)
+            except Exception:
+                pass
 
     def _init_ui(self):
         # Central layout
@@ -437,11 +450,32 @@ class MainWindow(QMainWindow):
         self.act_speakers_panel.triggered.connect(self._toggle_speakers_panel)
         menu_view.addAction(self.act_speakers_panel)
 
-        self.act_dark = QAction("&Dark Mode", self)
+        menu_theme = menu_view.addMenu("&Theme")
+        self.theme_group = QActionGroup(self)
+        self.theme_group.setExclusive(True)
+
+        self.act_theme_system = QAction("💻 Follow System (OS Settings)", self)
+        self.act_theme_system.setCheckable(True)
+        self.act_theme_system.triggered.connect(lambda: self._set_theme("system"))
+        self.theme_group.addAction(self.act_theme_system)
+        menu_theme.addAction(self.act_theme_system)
+
+        self.act_theme_light = QAction("☀️ Light Mode", self)
+        self.act_theme_light.setCheckable(True)
+        self.act_theme_light.triggered.connect(lambda: self._set_theme("light"))
+        self.theme_group.addAction(self.act_theme_light)
+        menu_theme.addAction(self.act_theme_light)
+
+        self.act_theme_dark = QAction("🌙 Dark Mode", self)
+        self.act_theme_dark.setCheckable(True)
+        self.act_theme_dark.triggered.connect(lambda: self._set_theme("dark"))
+        self.theme_group.addAction(self.act_theme_dark)
+        menu_theme.addAction(self.act_theme_dark)
+
+        # Retain self.act_dark for test and shortcut compatibility
+        self.act_dark = QAction("Toggle Dark Mode", self)
         self.act_dark.setCheckable(True)
-        self.act_dark.setChecked(config.get("theme", "light") == "dark")
         self.act_dark.triggered.connect(self._toggle_theme)
-        menu_view.addAction(self.act_dark)
 
         menu_view.addSeparator()
 
@@ -481,17 +515,44 @@ class MainWindow(QMainWindow):
         act_about.triggered.connect(self._on_about)
         menu_help.addAction(act_about)
 
-    def _apply_theme(self):
-        theme = config.get("theme", "light")
-        self.setStyleSheet(get_stylesheet(theme))
-
-    def _toggle_theme(self):
-        new_theme = "dark" if self.act_dark.isChecked() else "light"
-        config.set("theme", new_theme)
+    def _set_theme(self, theme_choice: str):
+        config.set("theme", theme_choice)
         self._apply_theme()
         if self.current_result:
             self._render_transcript_html(self.current_result)
         self.speakers_panel.refresh()
+
+    def _toggle_theme(self):
+        new_theme = "dark" if self.act_dark.isChecked() else "light"
+        self._set_theme(new_theme)
+
+    def _on_system_color_scheme_changed(self):
+        """Automatically adapt when the host OS toggles light/dark mode."""
+        if config.get("theme", "system") == "system":
+            self._apply_theme()
+            if self.current_result:
+                self._render_transcript_html(self.current_result)
+            self.speakers_panel.refresh()
+
+    def _apply_theme(self):
+        theme_pref = config.get("theme", "system")
+        eff_theme = get_effective_theme(theme_pref)
+
+        # Update Qt standard palette for native widgets
+        app = QApplication.instance()
+        if app is not None:
+            app.setPalette(create_palette(eff_theme))
+
+        self.setStyleSheet(get_stylesheet(eff_theme))
+
+        if hasattr(self, "act_theme_system"):
+            self.act_theme_system.setChecked(theme_pref == "system")
+            self.act_theme_light.setChecked(theme_pref == "light")
+            self.act_theme_dark.setChecked(theme_pref == "dark")
+            self.act_dark.setChecked(eff_theme == "dark")
+
+        if hasattr(self, "speakers_panel"):
+            self.speakers_panel.refresh()
 
     def _on_find(self):
         selected = self.editor.textCursor().selectedText()
@@ -765,7 +826,7 @@ class MainWindow(QMainWindow):
 
     def _on_worker_segment(self, seg: TranscriptionSegment):
         """Stream transcription segment directly into the notes in real-time."""
-        is_dark = config.get("theme", "light") == "dark"
+        is_dark = get_effective_theme(config.get("theme", "system")) == "dark"
         ts_color = "#4dabf7" if is_dark else "#0067c0"
         text_color = "#f0f0f0" if is_dark else "#1a1a1a"
 
@@ -801,7 +862,7 @@ class MainWindow(QMainWindow):
     def _render_transcript_html(self, result: TranscriptionResult):
         """Render transcript with clickable timestamp anchors and speaker badges."""
         html_parts = []
-        is_dark = config.get("theme", "light") == "dark"
+        is_dark = get_effective_theme(config.get("theme", "system")) == "dark"
         ts_color = "#4dabf7" if is_dark else "#0067c0"
         text_color = "#f0f0f0" if is_dark else "#1a1a1a"
 
@@ -811,8 +872,9 @@ class MainWindow(QMainWindow):
         for s in result.segments:
             if s.speaker and s.speaker not in distinct_speakers:
                 distinct_speakers.append(s.speaker)
+        palette = SPEAKER_COLORS_DARK if is_dark else SPEAKER_COLORS
         for idx, spk in enumerate(distinct_speakers):
-            fg, _ = SPEAKER_COLORS[idx % len(SPEAKER_COLORS)]
+            fg, _ = palette[idx % len(palette)]
             speaker_color_map[spk] = fg
 
         for seg in result.segments:

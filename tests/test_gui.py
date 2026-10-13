@@ -147,6 +147,7 @@ def test_dialogs_gui(qtbot):
     qtbot.addWidget(settings_dlg)
     settings_dlg.show()
     assert settings_dlg.combo_device is not None
+    assert settings_dlg.combo_theme is not None
     assert settings_dlg.table_models.rowCount() > 0
     settings_dlg.close()
 
@@ -399,4 +400,46 @@ def test_theme_toggle_with_rendered_transcript(app_window):
     win.act_dark.setChecked(False)
     win._toggle_theme()
     assert config.get("theme") == "light"
+
+
+def test_speakers_panel_light_mode_background(app_window):
+    """Ensure speakers panel background is light (#f7f9fa), not black (#1e1e1e) in light mode."""
+    win = app_window
+    win._set_theme("light")
+    assert config.get("theme") == "light"
+
+    pix = win.speakers_panel.grab()
+    img = pix.toImage()
+    # Check pixel inside the scroll area / cards container
+    color = img.pixelColor(20, 100)
+    assert color.lightness() > 200, f"Expected light background, got {color.name()}"
+    assert color.name().lower() in ["#f7f9fa", "#ffffff", "#f8f9fa", "#f9f9f9"]
+
+
+def test_system_theme_support(app_window):
+    """Test OS system theme detection and setting."""
+    from voicenotes.gui.styles import get_effective_theme, get_system_theme
+
+    win = app_window
+
+    sys_theme = get_system_theme()
+    assert sys_theme in ["light", "dark"]
+
+    # When theme is set to 'system', effective theme matches system theme
+    win._set_theme("system")
+    assert config.get("theme") == "system"
+    assert get_effective_theme("system") == sys_theme
+    assert win.act_theme_system.isChecked() is True
+
+    # Switching to explicit light/dark
+    win._set_theme("dark")
+    assert config.get("theme") == "dark"
+    assert get_effective_theme("dark") == "dark"
+    assert win.act_theme_dark.isChecked() is True
+
+    win._set_theme("light")
+    assert config.get("theme") == "light"
+    assert get_effective_theme("light") == "light"
+    assert win.act_theme_light.isChecked() is True
+
 

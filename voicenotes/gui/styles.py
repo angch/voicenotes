@@ -2,6 +2,14 @@
 UI Themes and CSS Styling for VoiceNotes (Light and Dark Windows Notepad style).
 """
 
+from __future__ import annotations
+
+import sys
+from typing import Optional
+
+from PyQt6.QtCore import Qt
+from PyQt6.QtGui import QColor, QGuiApplication, QPalette
+
 LIGHT_THEME = """
 QMainWindow {
     background-color: #f9f9f9;
@@ -173,6 +181,45 @@ QGroupBox::title {
     subcontrol-origin: margin;
     left: 10px;
     padding: 0 4px;
+}
+QLineEdit {
+    background-color: #ffffff;
+    color: #1a1a1a;
+    border: 1px solid #d0d0d0;
+    border-radius: 4px;
+    padding: 4px 8px;
+    selection-background-color: #b3d7ff;
+    selection-color: #000000;
+}
+QLineEdit:focus {
+    border-color: #0067c0;
+}
+QSplitter::handle {
+    background-color: #e0e0e0;
+}
+QSplitter::handle:horizontal {
+    width: 2px;
+}
+QSplitter::handle:vertical {
+    height: 2px;
+}
+QScrollArea {
+    background-color: transparent;
+    border: none;
+}
+QScrollArea > QWidget > QWidget {
+    background-color: transparent;
+}
+#speakersPanel, SpeakersPanel {
+    background-color: #f7f9fa;
+    border-left: 1px solid #e0e0e0;
+}
+#speakersScrollArea, #speakersContainer {
+    background-color: transparent;
+}
+#findReplaceBar, FindReplaceBar {
+    background-color: #f3f3f3;
+    border-bottom: 1px solid #e0e0e0;
 }
 """
 
@@ -360,9 +407,158 @@ QGroupBox::title {
     left: 10px;
     padding: 0 4px;
 }
+QLineEdit {
+    background-color: #262626;
+    color: #f0f0f0;
+    border: 1px solid #3d3d3d;
+    border-radius: 4px;
+    padding: 4px 8px;
+    selection-background-color: #0078d4;
+    selection-color: #ffffff;
+}
+QLineEdit:focus {
+    border-color: #0078d4;
+}
+QSplitter::handle {
+    background-color: #333333;
+}
+QSplitter::handle:horizontal {
+    width: 2px;
+}
+QSplitter::handle:vertical {
+    height: 2px;
+}
+QScrollArea {
+    background-color: transparent;
+    border: none;
+}
+QScrollArea > QWidget > QWidget {
+    background-color: transparent;
+}
+#speakersPanel, SpeakersPanel {
+    background-color: #202020;
+    border-left: 1px solid #333333;
+}
+#speakersScrollArea, #speakersContainer {
+    background-color: transparent;
+}
+#findReplaceBar, FindReplaceBar {
+    background-color: #262626;
+    border-bottom: 1px solid #333333;
+}
 """
 
 
+def get_system_theme() -> str:
+    """
+    Detect whether the host OS is currently configured for dark or light mode.
+    Queries Qt 6 style hints first, followed by OS-specific APIs/registries.
+    """
+    # 1. Qt 6 styleHints colorScheme (Windows 10/11, macOS, Linux portal)
+    try:
+        app = QGuiApplication.instance()
+        if app is not None:
+            scheme = app.styleHints().colorScheme()
+            if scheme == Qt.ColorScheme.Dark:
+                return "dark"
+            if scheme == Qt.ColorScheme.Light:
+                return "light"
+    except Exception:
+        pass
+
+    # 2. Windows registry: AppsUseLightTheme (0 = Dark, 1 = Light)
+    if sys.platform == "win32":
+        try:
+            import winreg
+
+            key = winreg.OpenKey(
+                winreg.HKEY_CURRENT_USER,
+                r"Software\Microsoft\Windows\CurrentVersion\Themes\Personalize",
+            )
+            value, _ = winreg.QueryValueEx(key, "AppsUseLightTheme")
+            winreg.CloseKey(key)
+            return "dark" if value == 0 else "light"
+        except Exception:
+            pass
+
+    # 3. macOS defaults
+    if sys.platform == "darwin":
+        try:
+            import subprocess
+
+            out = subprocess.check_output(
+                ["defaults", "read", "-g", "AppleInterfaceStyle"],
+                stderr=subprocess.DEVNULL,
+            ).decode().strip()
+            if "Dark" in out:
+                return "dark"
+        except Exception:
+            pass
+
+    # 4. Linux desktop color-scheme
+    if sys.platform.startswith("linux"):
+        try:
+            import subprocess
+
+            out = subprocess.check_output(
+                ["gsettings", "get", "org.gnome.desktop.interface", "color-scheme"],
+                stderr=subprocess.DEVNULL,
+            ).decode().strip()
+            if "prefer-dark" in out:
+                return "dark"
+        except Exception:
+            pass
+
+    return "light"
+
+
+def get_effective_theme(theme_preference: Optional[str] = None) -> str:
+    """
+    Resolve the concrete theme ('light' or 'dark').
+    If theme_preference is 'system' (or omitted/None), resolves to the current OS theme.
+    """
+    if not theme_preference or theme_preference == "system":
+        return get_system_theme()
+    return "dark" if theme_preference == "dark" else "light"
+
+
+def create_palette(theme: str = "light") -> QPalette:
+    """
+    Create a Qt standard QPalette for unstyled or native Qt widgets
+    matching the resolved light or dark color scheme.
+    """
+    pal = QPalette()
+    if theme == "dark":
+        pal.setColor(QPalette.ColorRole.Window, QColor("#202020"))
+        pal.setColor(QPalette.ColorRole.WindowText, QColor("#f0f0f0"))
+        pal.setColor(QPalette.ColorRole.Base, QColor("#1e1e1e"))
+        pal.setColor(QPalette.ColorRole.AlternateBase, QColor("#262626"))
+        pal.setColor(QPalette.ColorRole.ToolTipBase, QColor("#2d2d2d"))
+        pal.setColor(QPalette.ColorRole.ToolTipText, QColor("#f0f0f0"))
+        pal.setColor(QPalette.ColorRole.Text, QColor("#f0f0f0"))
+        pal.setColor(QPalette.ColorRole.Button, QColor("#2d2d2d"))
+        pal.setColor(QPalette.ColorRole.ButtonText, QColor("#f0f0f0"))
+        pal.setColor(QPalette.ColorRole.BrightText, QColor("#ff4d4f"))
+        pal.setColor(QPalette.ColorRole.Highlight, QColor("#0078d4"))
+        pal.setColor(QPalette.ColorRole.HighlightedText, QColor("#ffffff"))
+    else:
+        pal.setColor(QPalette.ColorRole.Window, QColor("#f9f9f9"))
+        pal.setColor(QPalette.ColorRole.WindowText, QColor("#1a1a1a"))
+        pal.setColor(QPalette.ColorRole.Base, QColor("#ffffff"))
+        pal.setColor(QPalette.ColorRole.AlternateBase, QColor("#f3f3f3"))
+        pal.setColor(QPalette.ColorRole.ToolTipBase, QColor("#ffffff"))
+        pal.setColor(QPalette.ColorRole.ToolTipText, QColor("#1a1a1a"))
+        pal.setColor(QPalette.ColorRole.Text, QColor("#1a1a1a"))
+        pal.setColor(QPalette.ColorRole.Button, QColor("#fbfbfb"))
+        pal.setColor(QPalette.ColorRole.ButtonText, QColor("#1a1a1a"))
+        pal.setColor(QPalette.ColorRole.BrightText, QColor("#cf1322"))
+        pal.setColor(QPalette.ColorRole.Highlight, QColor("#0067c0"))
+        pal.setColor(QPalette.ColorRole.HighlightedText, QColor("#ffffff"))
+    return pal
+
+
 def get_stylesheet(theme: str = "light") -> str:
-    """Return the CSS stylesheet for the requested theme."""
-    return DARK_THEME if theme == "dark" else LIGHT_THEME
+    """Return the CSS stylesheet for the requested or resolved theme."""
+    eff = get_effective_theme(theme)
+    return DARK_THEME if eff == "dark" else LIGHT_THEME
+

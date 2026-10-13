@@ -23,6 +23,7 @@ from PyQt6.QtWidgets import (
 
 from voicenotes.config import config
 from voicenotes.engine.audio_utils import format_timestamp
+from voicenotes.gui.styles import get_effective_theme
 
 
 # Distinct palette colors for up to 8 speakers (Light mode: fg, bg)
@@ -69,7 +70,7 @@ class SpeakerCard(QFrame):
         self.speaker_name = speaker_name
         self.first_turn_start = first_turn_start
 
-        is_dark = config.get("theme", "light") == "dark"
+        is_dark = get_effective_theme(config.get("theme", "system")) == "dark"
         palette = SPEAKER_COLORS_DARK if is_dark else SPEAKER_COLORS
         fg_color, bg_color = palette[color_idx % len(palette)]
         border_col = "#383838" if is_dark else "#d0d0d0"
@@ -168,11 +169,14 @@ class SpeakersPanel(QWidget):
 
     def __init__(self, parent: Optional[QWidget] = None):
         super().__init__(parent)
+        self.setObjectName("speakersPanel")
+        self.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True)
         self.setMinimumWidth(210)
         self.setMaximumWidth(320)
         self._last_segments: List[any] = []
 
         self._init_ui()
+        self.refresh()
 
     def _init_ui(self):
         layout = QVBoxLayout(self)
@@ -195,10 +199,15 @@ class SpeakersPanel(QWidget):
 
         # Scroll Area for Speaker Cards
         self.scroll_area = QScrollArea()
+        self.scroll_area.setObjectName("speakersScrollArea")
         self.scroll_area.setWidgetResizable(True)
         self.scroll_area.setFrameShape(QFrame.Shape.NoFrame)
+        self.scroll_area.viewport().setObjectName("speakersViewport")
+        self.scroll_area.viewport().setAutoFillBackground(False)
 
         self.cards_container = QWidget()
+        self.cards_container.setObjectName("speakersContainer")
+        self.cards_container.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True)
         self.cards_layout = QVBoxLayout(self.cards_container)
         self.cards_layout.setContentsMargins(2, 2, 2, 2)
         self.cards_layout.setSpacing(4)
@@ -236,7 +245,24 @@ class SpeakersPanel(QWidget):
         self.lbl_count.setText("(0)")
 
     def refresh(self):
-        """Refresh cards styling to match current theme."""
+        """Refresh panel and cards styling to match current theme."""
+        is_dark = get_effective_theme(config.get("theme", "system")) == "dark"
+        bg_color = "#202020" if is_dark else "#f7f9fa"
+        border_color = "#333333" if is_dark else "#e0e0e0"
+
+        self.setStyleSheet(
+            f"#speakersPanel {{ background-color: {bg_color}; border-left: 1px solid {border_color}; }}"
+        )
+        self.scroll_area.setStyleSheet(
+            f"#speakersScrollArea {{ background-color: {bg_color}; border: none; }}"
+        )
+        self.scroll_area.viewport().setStyleSheet(
+            f"#speakersViewport {{ background-color: {bg_color}; border: none; }}"
+        )
+        self.cards_container.setStyleSheet(
+            f"#speakersContainer {{ background-color: {bg_color}; border: none; }}"
+        )
+
         if self._last_segments:
             self.update_speakers(self._last_segments)
 

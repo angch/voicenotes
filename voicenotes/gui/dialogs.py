@@ -194,6 +194,17 @@ class SettingsDialog(QDialog):
             self.combo_lang.setCurrentIndex(idx)
         form_layout.addRow("Default Language:", self.combo_lang)
 
+        # Color Theme
+        self.combo_theme = QComboBox()
+        self.combo_theme.addItem("💻 Follow System (OS Settings)", "system")
+        self.combo_theme.addItem("☀️ Light Mode", "light")
+        self.combo_theme.addItem("🌙 Dark Mode", "dark")
+        curr_theme = config.get("theme", "system")
+        idx = self.combo_theme.findData(curr_theme)
+        if idx >= 0:
+            self.combo_theme.setCurrentIndex(idx)
+        form_layout.addRow("Color Theme:", self.combo_theme)
+
         layout.addWidget(grp_general)
 
         # Diarization Sensitivity
@@ -282,6 +293,7 @@ class SettingsDialog(QDialog):
         config.set("device", self.combo_device.currentData())
         config.set("model", self.combo_model.currentData())
         config.set("language", self.combo_lang.currentData())
+        config.set("theme", self.combo_theme.currentData())
         config.set("diarization_enabled", self.chk_diar.isChecked())
         self.accept()
 

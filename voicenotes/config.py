@@ -117,7 +117,7 @@ DEFAULT_SETTINGS: Dict[str, Any] = {
     "diarization_enabled": True,
     "num_speakers": "auto",  # 'auto' or integer (2, 3, etc.)
     "diarization_threshold": 0.65,
-    "theme": "light",  # 'light' or 'dark'
+    "theme": "system",  # 'system' (follow OS), 'light', or 'dark'
     "font_size": 13,
     "font_family": "Segoe UI",
     "word_wrap": True,
