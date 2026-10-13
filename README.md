@@ -32,10 +32,15 @@ All processing runs locally on device once models are downloaded. No recordings 
   - Dedicated **Speakers Panel**: rename speakers across the entire note and preview audio snippets for each speaker.
   - Runs fully offline without Hugging Face tokens, gated model agreements, or third-party API keys.
 
-- **Offline Transcription Engine**:
+- **Offline Transcription & Hardware Acceleration**:
   - Powered by Faster-Whisper (CTranslate2) with local model caching.
-  - Uses INT8 quantization for efficient execution on standard CPUs.
-  - Automatically utilizes NVIDIA CUDA GPU acceleration when available.
+  - Automatically detects NVIDIA CUDA GPUs (e.g. GeForce RTX) with FP16 Tensor Core acceleration.
+  - Seamless fallback to optimized CPU execution with INT8 quantization when no GPU is present.
+
+- **Audio Compression & Archival**:
+  - Compresses audio recordings into lightweight `.ogg` (Opus) or `.mp3` format (up to ~88% reduction vs WAV).
+  - **Archive Voice Note Package (`Ctrl+Shift+Z`)**: Exports a single `.zip` bundle containing compressed audio, formatted transcript, and metadata.
+  - **Send Voice for Tuning**: Packages debug metadata and compressed voice audio for model and diarization quality tuning.
 
 - **Live Microphone Dictation and Recording**:
   - Low-latency (~250ms) streaming dictation directly into the document with concurrent refinement pass.
@@ -46,6 +51,7 @@ All processing runs locally on device once models are downloaded. No recordings 
   - **Subtitles (`.srt`, `.vtt`)**: SubRip and WebVTT formats for video players and editing software.
   - **Markdown (`.md`)**: Formatted notes with metadata summary table.
   - **JSON (`.json`)**: Structured output including timestamps and segment metadata.
+  - **Archival Zip (`.zip`)**: Note package bundling transcript, metadata, and compressed audio.
 
 - **Standalone Executable**:
   - Can be packaged into a standalone distribution with PyInstaller.
@@ -151,7 +157,10 @@ voicenotes/
 │   ├── jfk.flac
 │   ├── single_mic_male.wav
 │   └── single_mic_female.flac
-├── tests/                         # Automated test suite (31 tests)
+├── assets/                        # High-resolution application icons (PNG and multi-size ICO)
+│   ├── app_icon.ico
+│   └── app_icon.png
+├── tests/                         # Automated test suite (38 tests)
 │   ├── test_engine.py
 │   ├── test_exporters.py
 │   └── test_gui.py
@@ -160,6 +169,7 @@ voicenotes/
 │   └── download_models.py         # Pre-download models for offline distribution
 ├── build_executable.py            # Builds standalone VoiceNotes.exe
 ├── VoiceNotes.spec                # PyInstaller specification
+├── VoiceNotes.iss                 # Inno Setup Windows installer specification
 ├── run.bat                        # Windows batch launcher
 ├── run.ps1                        # PowerShell launcher
 ├── pyproject.toml                 # Project metadata and dependencies
@@ -176,6 +186,7 @@ voicenotes/
 | `Ctrl + O` | Open Text File |
 | `Ctrl + S` | Save Note |
 | `Ctrl + Shift + S` | Save Note As... |
+| `Ctrl + Shift + Z` | Archive Voice Note Package (.zip) |
 | `Ctrl + Shift + O` | Open Audio or Video File |
 | `Ctrl + R` | Record / Dictate from Microphone |
 | `Ctrl + F` | Find in Note |

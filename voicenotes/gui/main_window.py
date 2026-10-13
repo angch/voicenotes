@@ -48,6 +48,7 @@ from voicenotes.config import (
     AVAILABLE_WHISPER_MODELS,
     SUPPORTED_LANGUAGES,
     config,
+    get_app_icon_path,
     get_samples_dir,
 )
 from voicenotes.engine.audio_utils import format_timestamp, parse_timestamp
@@ -56,6 +57,8 @@ from voicenotes.engine.transcriber import (
     SpeechTranscriber,
     TranscriptionResult,
     TranscriptionSegment,
+    get_cuda_device_name,
+    is_cuda_available,
 )
 from voicenotes.export.exporters import (
     export_to_json,
@@ -130,6 +133,10 @@ class MainWindow(QMainWindow):
         super().__init__()
         self.setWindowTitle("VoiceNotes - Notepad Lite")
         self.resize(960, 680)
+
+        icon_path = get_app_icon_path()
+        if icon_path.exists():
+            self.setWindowIcon(QIcon(str(icon_path)))
 
         self.transcriber = SpeechTranscriber()
         self.worker: Optional[TranscriptionWorker] = None
@@ -305,11 +312,13 @@ class MainWindow(QMainWindow):
 
         self.lbl_doc_status = QLabel("Untitled")
         self.lbl_doc_stats = QLabel("Lines: 1 | Words: 0 | Chars: 0")
-        self.lbl_device_status = QLabel("⚡ Offline Ready (CPU INT8)")
+        self.lbl_device_status = QLabel("⚡ Checking Hardware...")
 
         self.status_bar.addWidget(self.lbl_doc_status, 1)
         self.status_bar.addPermanentWidget(self.lbl_doc_stats)
         self.status_bar.addPermanentWidget(self.lbl_device_status)
+
+        self._update_device_status()
 
         # Build menus after all controls and widgets exist
         self._create_menus()
@@ -360,6 +369,14 @@ class MainWindow(QMainWindow):
         act_exp_md = QAction("Markdown Notes (.md)", self)
         act_exp_md.triggered.connect(lambda: self._export_as("md"))
         menu_export.addAction(act_exp_md)
+
+        menu_file.addSeparator()
+
+        act_archive = QAction("&Archive Voice Note Package (.zip)...", self)
+        act_archive.setShortcut("Ctrl+Shift+Z")
+        act_archive.setToolTip("Create a compact .zip bundle with compressed audio (.ogg/.mp3), transcript, and metadata")
+        act_archive.triggered.connect(self._on_archive_package)
+        menu_file.addAction(act_archive)
 
         menu_file.addSeparator()
 
@@ -449,6 +466,11 @@ class MainWindow(QMainWindow):
         act_rec.setShortcut("Ctrl+R")
         act_rec.triggered.connect(self._on_record_mic)
         menu_audio.addAction(act_rec)
+
+        act_export_audio = QAction("Export Compressed &Audio (.ogg / .mp3)...", self)
+        act_export_audio.setToolTip("Export loaded or recorded audio compressed into .ogg or .mp3 to save disk space")
+        act_export_audio.triggered.connect(self._on_export_compressed_audio)
+        menu_audio.addAction(act_export_audio)
 
         menu_audio.addSeparator()
 
@@ -771,6 +793,15 @@ class MainWindow(QMainWindow):
         chars = len(text)
         self.lbl_doc_stats.setText(f"Lines: {lines} | Words: {words} | Chars: {chars}")
 
+    def _update_device_status(self):
+        gpu_name = get_cuda_device_name()
+        if is_cuda_available() and gpu_name:
+            self.lbl_device_status.setText(f"⚡ NVIDIA CUDA ({gpu_name})")
+            self.lbl_device_status.setToolTip(f"Hardware Acceleration active: {gpu_name} (float16)")
+        else:
+            self.lbl_device_status.setText("⚡ Offline Ready (CPU INT8)")
+            self.lbl_device_status.setToolTip("Execution mode: Optimized CPU (INT8 quantization)")
+
     def load_audio_file(self, file_path: str):
         """Load an audio file into the player and prepare for transcription."""
         self.current_audio_file = file_path
@@ -1077,9 +1108,11 @@ class MainWindow(QMainWindow):
             plain = self.current_result.plain_text
         else:
             raw = self.editor.toPlainText()
-            plain = re.sub(r"\[\d{1,2}:\d{2}(?::\d{2})?.*?\]\s*(?:Speaker \d+:)?\s*", "", raw)
+        text_to_copy = plain.strip()
+        self._last_copied_plain = text_to_copy
         clipboard = QApplication.clipboard()
-        clipboard.setText(plain.strip())
+        if clipboard:
+            clipboard.setText(text_to_copy)
         self.status_bar.showMessage("Plain text copied to clipboard!", 3000)
         if hasattr(self, "btn_copy_plain"):
             self.btn_copy_plain.setText("✓ Copied!")
@@ -1095,8 +1128,11 @@ class MainWindow(QMainWindow):
             content = "\n".join(lines)
         else:
             content = self.editor.toPlainText()
+        text_to_copy = content.strip()
+        self._last_copied_timestamped = text_to_copy
         clipboard = QApplication.clipboard()
-        clipboard.setText(content.strip())
+        if clipboard:
+            clipboard.setText(text_to_copy)
         self.status_bar.showMessage("Timestamped transcript copied to clipboard!", 3000)
         if hasattr(self, "btn_copy_timestamps"):
             self.btn_copy_timestamps.setText("✓ Copied!")
@@ -1133,6 +1169,62 @@ class MainWindow(QMainWindow):
         if file_path:
             save_export_to_file(self.current_result, file_path, format_type=fmt)
             self.status_bar.showMessage(f"Exported successfully to {file_path}", 4000)
+
+    def _on_archive_package(self):
+        if not self.current_result and not self.editor.toPlainText().strip() and not self.current_audio_file:
+            QMessageBox.information(
+                self,
+                "Archive Voice Note Package",
+                "There is no transcript or audio to archive yet.\n\nOpen an audio file or record from microphone first.",
+            )
+            return
+
+        base_name = Path(self.current_audio_file).stem if self.current_audio_file else "voicenote"
+        default_path = f"{base_name}_archive.zip"
+        file_path, _ = QFileDialog.getSaveFileName(
+            self,
+            "Archive Voice Note Package",
+            default_path,
+            "ZIP Archives (*.zip);;All Files (*.*)",
+        )
+        if file_path:
+            from voicenotes.export.exporters import create_archive_bundle
+
+            zip_res = create_archive_bundle(
+                result=self.current_result,
+                audio_path=self.current_audio_file,
+                target_zip_path=file_path,
+                transcript_text=self.editor.toPlainText(),
+                audio_format="ogg",
+            )
+            self.status_bar.showMessage(f"Archived note package with compressed audio to {zip_res.name}", 4000)
+
+    def _on_export_compressed_audio(self):
+        if not self.current_audio_file or not os.path.exists(self.current_audio_file):
+            QMessageBox.information(
+                self,
+                "Export Compressed Audio",
+                "No audio loaded or recorded yet.\n\nOpen an audio file or record from microphone first.",
+            )
+            return
+
+        from voicenotes.engine.audio_utils import compress_audio_file
+
+        base_name = Path(self.current_audio_file).stem
+        default_path = f"{base_name}.ogg"
+        file_path, selected_filter = QFileDialog.getSaveFileName(
+            self,
+            "Export Compressed Audio",
+            default_path,
+            "Compressed OGG Vorbis (*.ogg);;Compressed MP3 Audio (*.mp3);;All Files (*.*)",
+        )
+        if file_path:
+            fmt = "mp3" if file_path.lower().endswith(".mp3") or "mp3" in selected_filter.lower() else "ogg"
+            out_path = compress_audio_file(self.current_audio_file, output_path=file_path, target_format=fmt)
+            size_kb = os.path.getsize(out_path) / 1024
+            self.status_bar.showMessage(
+                f"Exported compressed {fmt.upper()} audio ({size_kb:.1f} KB) to {out_path.name}", 4000
+            )
 
     def _on_new_file(self):
         if self._is_recording:

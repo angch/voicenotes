@@ -8,11 +8,19 @@ dependencies = [
     "av==14.2.0",
     "faster-whisper>=1.2.1",
     "numpy>=2.0.0",
+    "pillow>=10.0.0",
     "pyinstaller>=6.22.3",
     "pyqt6>=6.11.0",
     "scikit-learn>=1.5.0",
     "sounddevice>=0.5.0",
     "soundfile>=0.12.0",
+]
+
+[project.optional-dependencies]
+cuda = [
+    "nvidia-cublas-cu12",
+    "nvidia-cudnn-cu12",
+    "nvidia-cuda-nvrtc-cu12",
 ]
 
 [project.scripts]

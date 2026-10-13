@@ -6,8 +6,10 @@ word and segment timestamps, and integrates offline speaker diarization.
 
 from __future__ import annotations
 
+import glob
 import logging
 import os
+import sys
 import time
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -22,6 +24,107 @@ from voicenotes.engine.diarizer import SpeakerDiarizer
 from voicenotes.engine.model_manager import ModelManager
 
 logger = logging.getLogger(__name__)
+
+_CUDA_INITIALIZED = False
+
+
+def setup_cuda_dll_paths() -> List[str]:
+    """Register Windows DLL search paths for NVIDIA CUDA packages (cuBLAS, cuDNN, etc.)."""
+    global _CUDA_INITIALIZED
+    added_paths: List[str] = []
+    if sys.platform != "win32":
+        return added_paths
+
+    # 1. Pip package directories (nvidia-cublas-cu12, nvidia-cudnn-cu12, etc.)
+    prefixes = [sys.prefix]
+    base_p = getattr(sys, "base_prefix", None)
+    if base_p and base_p != sys.prefix:
+        prefixes.append(base_p)
+
+    for prefix in prefixes:
+        pattern = os.path.join(prefix, "Lib", "site-packages", "nvidia", "*", "bin")
+        for p in glob.glob(pattern):
+            if os.path.isdir(p):
+                try:
+                    os.add_dll_directory(p)
+                    added_paths.append(p)
+                except Exception:
+                    pass
+
+    # 2. CUDA_PATH environment variable if NVIDIA CUDA Toolkit is installed
+    cuda_path = os.environ.get("CUDA_PATH")
+    if cuda_path:
+        bin_dir = os.path.join(cuda_path, "bin")
+        if os.path.isdir(bin_dir):
+            try:
+                os.add_dll_directory(bin_dir)
+                added_paths.append(bin_dir)
+            except Exception:
+                pass
+
+    _CUDA_INITIALIZED = True
+    return added_paths
+
+
+def is_cuda_available() -> bool:
+    """Check whether NVIDIA CUDA acceleration is available on this system."""
+    setup_cuda_dll_paths()
+    try:
+        import ctranslate2
+        import ctypes
+
+        if ctranslate2.get_cuda_device_count() <= 0:
+            return False
+
+        # Verify cuBLAS DLL can be loaded
+        for dll_name in ("cublas64_12.dll", "cublas64_11.dll"):
+            try:
+                ctypes.CDLL(dll_name)
+                return True
+            except Exception:
+                pass
+        return False
+    except Exception:
+        return False
+
+
+def get_cuda_device_name() -> Optional[str]:
+    """Return the model name of the primary NVIDIA GPU, or None if unavailable."""
+    if not is_cuda_available():
+        return None
+
+    # 1. Direct NVML query via ctypes (instant, standard Windows NVIDIA driver)
+    try:
+        import ctypes
+        nvml = ctypes.CDLL("nvml.dll")
+        nvml.nvmlInit()
+        handle = ctypes.c_void_p()
+        nvml.nvmlDeviceGetHandleByIndex(0, ctypes.byref(handle))
+        name_buf = ctypes.create_string_buffer(128)
+        nvml.nvmlDeviceGetName(handle, name_buf, 128)
+        nvml.nvmlShutdown()
+        name = name_buf.value.decode("utf-8").strip()
+        if name:
+            return name
+    except Exception:
+        pass
+
+    # 2. PowerShell WMI fallback
+    try:
+        import subprocess
+        out = subprocess.check_output(
+            ["powershell", "-NoProfile", "-Command", "Get-CimInstance Win32_VideoController | Select-Object -ExpandProperty Name"],
+            text=True,
+            timeout=2,
+        )
+        for line in out.strip().splitlines():
+            line = line.strip()
+            if "NVIDIA" in line.upper():
+                return line
+    except Exception:
+        pass
+
+    return "NVIDIA CUDA GPU"
 
 
 @dataclass
@@ -77,6 +180,64 @@ class TranscriptionResult:
         return " ".join(seg.text.strip() for seg in self.segments)
 
 
+def _split_segment_by_sentences_or_pauses(
+    seg_dict: Dict[str, Any], min_sub_duration: float = 1.5
+) -> List[Dict[str, Any]]:
+    """
+    Split a long transcription segment into natural speech turns/sentences using word timestamps.
+    Enables accurate speaker diarization across multi-speaker turns within a single Whisper chunk.
+    """
+    words = seg_dict.get("words", [])
+    if not words or (seg_dict["end"] - seg_dict["start"]) < 4.0:
+        return [seg_dict]
+
+    sub_segs: List[Dict[str, Any]] = []
+    current_words: List[TranscriptionWord] = []
+
+    for i, w in enumerate(words):
+        current_words.append(w)
+        dur = current_words[-1].end - current_words[0].start
+
+        w_text = w.word.strip()
+        is_punct = w_text.endswith((".", "?", "!"))
+        is_pause = False
+        if i < len(words) - 1:
+            if (words[i + 1].start - w.end) >= 0.35:
+                is_pause = True
+
+        if dur >= min_sub_duration and (is_punct or is_pause):
+            sub_segs.append(
+                {
+                    "id": len(sub_segs) + 1,
+                    "start": current_words[0].start,
+                    "end": current_words[-1].end,
+                    "text": "".join(cw.word for cw in current_words).strip(),
+                    "words": list(current_words),
+                    "speaker": None,
+                }
+            )
+            current_words = []
+
+    if current_words:
+        if sub_segs and (current_words[-1].end - current_words[0].start) < 1.0:
+            sub_segs[-1]["words"].extend(current_words)
+            sub_segs[-1]["end"] = current_words[-1].end
+            sub_segs[-1]["text"] = "".join(cw.word for cw in sub_segs[-1]["words"]).strip()
+        else:
+            sub_segs.append(
+                {
+                    "id": len(sub_segs) + 1,
+                    "start": current_words[0].start,
+                    "end": current_words[-1].end,
+                    "text": "".join(cw.word for cw in current_words).strip(),
+                    "words": list(current_words),
+                    "speaker": None,
+                }
+            )
+
+    return sub_segs if sub_segs else [seg_dict]
+
+
 class SpeechTranscriber:
     """Offline Whisper transcription and speaker diarization engine."""
 
@@ -86,33 +247,21 @@ class SpeechTranscriber:
         self._model: Optional[WhisperModel] = None
         self._diarizer: Optional[SpeakerDiarizer] = None
 
+    @property
+    def active_device(self) -> str:
+        """Currently active or default compute device ('cuda' or 'cpu')."""
+        return self._current_device or ("cuda" if is_cuda_available() else "cpu")
+
     def _get_device_and_compute(self, requested_device: str = "auto") -> tuple[str, str]:
         """Determine device and compute type with automatic fallback."""
         if requested_device == "cpu":
             return "cpu", "int8"
 
         if requested_device in ("auto", "cuda"):
-            try:
-                import ctranslate2
-                import ctypes
-
-                if ctranslate2.get_cuda_device_count() > 0:
-                    # Verify cuBLAS DLL is available on Windows before attempting CUDA
-                    can_load_cublas = False
-                    for dll_name in ("cublas64_12.dll", "cublas64_11.dll"):
-                        try:
-                            ctypes.CDLL(dll_name)
-                            can_load_cublas = True
-                            break
-                        except Exception:
-                            pass
-
-                    if can_load_cublas:
-                        return "cuda", "float16"
-                    else:
-                        logger.info("NVIDIA GPU detected but cuBLAS DLL not installed; using optimized CPU INT8.")
-            except Exception:
-                pass
+            if is_cuda_available():
+                return "cuda", "float16"
+            elif requested_device == "cuda":
+                logger.warning("NVIDIA CUDA requested but not available; falling back to CPU.")
 
         return "cpu", "int8"
 
@@ -303,6 +452,12 @@ class SpeechTranscriber:
         if diarize and collected_segments:
             if progress_callback:
                 progress_callback("Identifying speakers (diarization)...", 80)
+
+            # Break long multi-turn segments into sentence/pause chunks to accurately isolate speaker turns
+            refined_segments: List[Dict[str, Any]] = []
+            for seg in collected_segments:
+                refined_segments.extend(_split_segment_by_sentences_or_pauses(seg))
+            collected_segments = refined_segments
 
             if self._diarizer is None:
                 self._diarizer = SpeakerDiarizer()

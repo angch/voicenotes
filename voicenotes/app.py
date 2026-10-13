@@ -10,16 +10,19 @@ import sys
 from pathlib import Path
 
 from PyQt6.QtCore import Qt
+from PyQt6.QtGui import QIcon
 from PyQt6.QtWidgets import QApplication
 
 from voicenotes import __app_name__, __version__
-from voicenotes.engine.transcriber import SpeechTranscriber
+from voicenotes.config import get_app_icon_path
+from voicenotes.engine.transcriber import SpeechTranscriber, setup_cuda_dll_paths
 from voicenotes.export.exporters import save_export_to_file
 from voicenotes.gui.main_window import MainWindow
 
 
 def run_cli(args: argparse.Namespace) -> int:
     """Run transcription in CLI headless mode."""
+    setup_cuda_dll_paths()
     audio_path = Path(args.audio)
     if not audio_path.exists():
         print(f"Error: Audio file not found: {audio_path}", file=sys.stderr)
@@ -58,6 +61,7 @@ def run_cli(args: argparse.Namespace) -> int:
 
 def run_gui(initial_audio: str | None = None) -> int:
     """Run desktop application GUI."""
+    setup_cuda_dll_paths()
     # Windows high-DPI and taskbar integration
     if sys.platform == "win32":
         try:
@@ -72,6 +76,10 @@ def run_gui(initial_audio: str | None = None) -> int:
     app = QApplication(sys.argv)
     app.setApplicationName(__app_name__)
     app.setApplicationVersion(__version__)
+
+    icon_path = get_app_icon_path()
+    if icon_path.exists():
+        app.setWindowIcon(QIcon(str(icon_path)))
 
     window = MainWindow()
     if initial_audio and Path(initial_audio).exists():

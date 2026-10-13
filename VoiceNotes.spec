@@ -8,6 +8,7 @@ block_cipher = None
 datas = [
     ('models', 'models'),
     ('samples', 'samples'),
+    ('assets', 'assets'),
 ]
 
 # Collect metadata and data files for machine learning packages
@@ -18,6 +19,11 @@ binaries = []
 binaries += collect_dynamic_libs('ctranslate2')
 binaries += collect_dynamic_libs('onnxruntime')
 binaries += collect_dynamic_libs('soundfile')
+for pkg in ('nvidia.cublas', 'nvidia.cudnn', 'nvidia.cuda_nvrtc'):
+    try:
+        binaries += collect_dynamic_libs(pkg)
+    except Exception:
+        pass
 
 hiddenimports = [
     'faster_whisper',
@@ -79,6 +85,7 @@ exe = EXE(
     [],
     exclude_binaries=True,
     name='VoiceNotes',
+    icon='assets/app_icon.ico',
     debug=False,
     bootloader_ignore_signals=False,
     strip=False,

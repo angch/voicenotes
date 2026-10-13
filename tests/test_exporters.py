@@ -103,3 +103,87 @@ def test_export_to_markdown():
     assert "# meeting" in md
     assert "**Speaker 1**" in md
     assert "**Speaker 2**" in md
+
+
+def test_compress_audio_file(tmp_path):
+    """Test audio compression to .ogg and .mp3 formats."""
+    import os
+    from voicenotes.engine.audio_utils import compress_audio_file, load_audio
+
+    jfk_sample = Path("samples/jfk.flac")
+    assert jfk_sample.exists()
+    orig_size = os.path.getsize(jfk_sample)
+
+    # 1. Compress to OGG
+    ogg_target = tmp_path / "compressed.ogg"
+    out_ogg = compress_audio_file(jfk_sample, output_path=ogg_target, target_format="ogg")
+    assert out_ogg.exists()
+    ogg_size = os.path.getsize(out_ogg)
+    assert ogg_size < orig_size * 0.25  # At least 75% smaller
+    audio_ogg, sr_ogg = load_audio(out_ogg)
+    assert sr_ogg == 16000
+    assert len(audio_ogg) > 0
+
+    # 2. Compress to MP3
+    mp3_target = tmp_path / "compressed.mp3"
+    out_mp3 = compress_audio_file(jfk_sample, output_path=mp3_target, target_format="mp3")
+    assert out_mp3.exists()
+    mp3_size = os.path.getsize(out_mp3)
+    assert mp3_size < orig_size * 0.25
+    audio_mp3, sr_mp3 = load_audio(out_mp3)
+    assert sr_mp3 == 16000
+    assert len(audio_mp3) > 0
+
+
+def test_create_archive_bundle(tmp_path):
+    """Test archival package generation containing compressed audio, transcripts, and metadata."""
+    import json
+    import os
+    import zipfile
+    from voicenotes.export.exporters import create_archive_bundle
+
+    res = _sample_result()
+    jfk_sample = Path("samples/jfk.flac")
+
+    # 1. Archive with OGG compression (default)
+    zip_path_ogg = tmp_path / "meeting_archive_ogg.zip"
+    created_ogg = create_archive_bundle(
+        result=res,
+        audio_path=jfk_sample,
+        target_zip_path=zip_path_ogg,
+        audio_format="ogg",
+        notes="Important sync meeting notes",
+    )
+    assert created_ogg.exists()
+
+    with zipfile.ZipFile(created_ogg, "r") as zf:
+        namelist = zf.namelist()
+        assert "audio.ogg" in namelist
+        assert "transcript.txt" in namelist
+        assert "transcript_plain.txt" in namelist
+        assert "transcript.md" in namelist
+        assert "transcript.srt" in namelist
+        assert "transcript.vtt" in namelist
+        assert "transcript.json" in namelist
+        assert "archive_metadata.json" in namelist
+        assert "notes.txt" in namelist
+
+        meta = json.loads(zf.read("archive_metadata.json").decode("utf-8"))
+        assert meta["audio"]["compressed_format"] == "ogg"
+        assert meta["audio"]["compressed_size_bytes"] < os.path.getsize(jfk_sample)
+
+    # 2. Archive with MP3 compression
+    zip_path_mp3 = tmp_path / "meeting_archive_mp3.zip"
+    created_mp3 = create_archive_bundle(
+        result=res,
+        audio_path=jfk_sample,
+        target_zip_path=zip_path_mp3,
+        audio_format="mp3",
+    )
+    assert created_mp3.exists()
+
+    with zipfile.ZipFile(created_mp3, "r") as zf:
+        assert "audio.mp3" in zf.namelist()
+        meta = json.loads(zf.read("archive_metadata.json").decode("utf-8"))
+        assert meta["audio"]["compressed_format"] == "mp3"
+

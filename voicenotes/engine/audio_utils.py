@@ -223,10 +223,55 @@ class AudioRecorder:
             audio = np.mean(audio, axis=1)
         return audio.flatten()
 
-    def save_to_temp_file(self) -> str:
-        """Stop recording and save to a temporary WAV file."""
+    def save_to_temp_file(self, target_format: str = "wav") -> str:
+        """Stop recording and save to a temporary file (wav, ogg, or mp3)."""
         audio = self.stop()
-        fd, path = tempfile.mkstemp(suffix=".wav", prefix="voicenotes_rec_")
+        fmt = target_format.lower().lstrip(".")
+        if fmt not in ("wav", "ogg", "mp3"):
+            fmt = "wav"
+        fd, path = tempfile.mkstemp(suffix=f".{fmt}", prefix="voicenotes_rec_")
         os.close(fd)
-        sf.write(path, audio, self.sample_rate)
+        sf_format = "OGG" if fmt == "ogg" else ("MP3" if fmt == "mp3" else "WAV")
+        sf.write(path, audio, self.sample_rate, format=sf_format)
         return path
+
+
+def compress_audio_file(
+    input_path: Union[str, Path],
+    output_path: Optional[Union[str, Path]] = None,
+    target_format: str = "ogg",
+    target_sr: int = 16000,
+) -> Path:
+    """
+    Compress an audio file to .ogg (default) or .mp3 for efficient archival and transmission.
+
+    Args:
+        input_path: Path to existing audio file.
+        output_path: Optional destination path. If None, a temporary file is created.
+        target_format: 'ogg' or 'mp3'.
+        target_sr: Sample rate in Hz (default 16000 Hz, voice standard).
+
+    Returns:
+        Path to the resulting compressed audio file.
+    """
+    input_p = Path(input_path).resolve()
+    if not input_p.exists():
+        raise FileNotFoundError(f"Source audio file not found: {input_path}")
+
+    fmt = target_format.lower().lstrip(".")
+    if fmt not in ("ogg", "mp3"):
+        fmt = "ogg"
+
+    if output_path is None:
+        fd, temp_dest = tempfile.mkstemp(suffix=f".{fmt}", prefix="voicenotes_compressed_")
+        os.close(fd)
+        out_p = Path(temp_dest)
+    else:
+        out_p = Path(output_path).resolve()
+        out_p.parent.mkdir(parents=True, exist_ok=True)
+
+    audio, sr = load_audio(input_p, target_sr=target_sr)
+    sf_format = "OGG" if fmt == "ogg" else "MP3"
+    sf.write(str(out_p), audio, sr, format=sf_format)
+    return out_p
+

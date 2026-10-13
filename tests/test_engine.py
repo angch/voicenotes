@@ -8,10 +8,16 @@ from pathlib import Path
 import pytest
 import soundfile as sf
 
+from voicenotes.config import get_app_icon_path
 from voicenotes.engine.audio_utils import format_timestamp, load_audio, parse_timestamp
 from voicenotes.engine.diarizer import SpeakerDiarizer
 from voicenotes.engine.model_manager import ModelManager
-from voicenotes.engine.transcriber import SpeechTranscriber
+from voicenotes.engine.transcriber import (
+    SpeechTranscriber,
+    get_cuda_device_name,
+    is_cuda_available,
+    setup_cuda_dll_paths,
+)
 
 
 def test_timestamp_formatting():
@@ -91,3 +97,23 @@ def test_transcriber_multi_speaker_diarization():
     assert len(speaker_set) >= 2
     assert "Speaker 1" in speaker_set
     assert "Speaker 2" in speaker_set
+
+
+def test_cuda_detection_and_dll_setup():
+    added = setup_cuda_dll_paths()
+    assert isinstance(added, list)
+    cuda_avail = is_cuda_available()
+    assert isinstance(cuda_avail, bool)
+    device_name = get_cuda_device_name()
+    if cuda_avail:
+        assert device_name is not None
+        assert "NVIDIA" in device_name.upper()
+
+
+def test_app_icon_paths():
+    icon_path = get_app_icon_path()
+    assert icon_path.exists()
+    assert icon_path.suffix.lower() in (".png", ".ico")
+    assert Path("assets/app_icon.png").exists()
+    assert Path("assets/app_icon.ico").exists()
+    assert Path("assets/app_icon.ico").stat().st_size > 1000

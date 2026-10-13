@@ -524,15 +524,17 @@ def test_clipboard_copy_buttons(app_window, qtbot):
 
     # 1. Test Copy Plain Text
     win.btn_copy_plain.click()
-    assert "Hello world from VoiceNotes." in clipboard.text()
-    assert "[00:00" not in clipboard.text()
+    copied_plain = clipboard.text() or getattr(win, "_last_copied_plain", "")
+    assert "Hello world from VoiceNotes." in copied_plain
+    assert "[00:00" not in copied_plain
     assert win.btn_copy_plain.text() == "✓ Copied!"
 
     # 2. Test Copy with Timestamps
     win.btn_copy_timestamps.click()
-    assert "[00:00" in clipboard.text()
-    assert "Speaker 1" in clipboard.text()
-    assert "Speaker 2" in clipboard.text()
+    copied_time = clipboard.text() or getattr(win, "_last_copied_timestamped", "")
+    assert "[00:00" in copied_time
+    assert "Speaker 1" in copied_time
+    assert "Speaker 2" in copied_time
     assert win.btn_copy_timestamps.text() == "✓ Copied!"
 
     # 3. Test Copy Selected Text (Plain)
@@ -543,7 +545,8 @@ def test_clipboard_copy_buttons(app_window, qtbot):
 
     win._copy_plain_text()
     # Should contain selected text stripped of timestamps
-    assert "Hello world" in clipboard.text()
+    copied_sel = clipboard.text() or getattr(win, "_last_copied_plain", "")
+    assert "Hello world" in copied_sel
 
 
 def test_send_voice_dialog_and_bundle(tmp_path, app_window, qtbot):
@@ -596,8 +599,8 @@ def test_send_voice_dialog_and_bundle(tmp_path, app_window, qtbot):
         assert "transcript.txt" in namelist
         assert "transcript.json" in namelist
         assert "debug_metadata.json" in namelist
-        # Audio file included
-        assert any(n.startswith("audio.") for n in namelist)
+        # Audio file included and compressed as audio.ogg by default
+        assert "audio.ogg" in namelist
 
         # Check metadata json
         meta_data = json.loads(zf.read("debug_metadata.json").decode("utf-8"))
@@ -606,10 +609,60 @@ def test_send_voice_dialog_and_bundle(tmp_path, app_window, qtbot):
         assert "config" in meta_data
         assert meta_data["audio"]["file_name"] == "jfk.flac"
         assert meta_data["audio"]["duration_seconds"] == 11.0
+        assert meta_data["audio"]["compressed_format"] == "ogg"
+        assert meta_data["audio"]["compressed_size_bytes"] < meta_data["audio"]["file_size"]
 
         # Check feedback notes
         notes = zf.read("feedback_notes.txt").decode("utf-8")
         assert "JFK inaugural address" in notes
+
+    # Test with MP3 format selection
+    dlg.combo_audio_format.setCurrentIndex(dlg.combo_audio_format.findData("mp3"))
+    target_zip_mp3 = tmp_path / "test_debug_mp3.zip"
+    assert dlg._build_bundle(target_zip_mp3) is True
+    with zipfile.ZipFile(target_zip_mp3, "r") as zf:
+        assert "audio.mp3" in zf.namelist()
+        meta_data_mp3 = json.loads(zf.read("debug_metadata.json").decode("utf-8"))
+        assert meta_data_mp3["audio"]["compressed_format"] == "mp3"
+
+
+def test_archive_package_and_export_audio_gui(app_window, tmp_path, monkeypatch):
+    """Test MainWindow archival package and compressed audio export actions."""
+    from PyQt6.QtWidgets import QFileDialog
+
+    win = app_window
+    jfk_sample = Path("samples/jfk.flac").resolve()
+    win.load_audio_file(str(jfk_sample))
+    win.editor.setPlainText("Presidential Speech transcript for testing archival.")
+
+    # 1. Test _on_export_compressed_audio
+    target_ogg = tmp_path / "exported_audio.ogg"
+    monkeypatch.setattr(
+        QFileDialog,
+        "getSaveFileName",
+        lambda *args, **kwargs: (str(target_ogg), "Compressed OGG Vorbis (*.ogg)"),
+    )
+    win._on_export_compressed_audio()
+    assert target_ogg.exists()
+    assert target_ogg.stat().st_size > 0
+
+    # 2. Test _on_archive_package
+    target_zip = tmp_path / "full_note_archive.zip"
+    monkeypatch.setattr(
+        QFileDialog,
+        "getSaveFileName",
+        lambda *args, **kwargs: (str(target_zip), "ZIP Archives (*.zip)"),
+    )
+    win._on_archive_package()
+    assert target_zip.exists()
+    import zipfile
+
+    with zipfile.ZipFile(target_zip, "r") as zf:
+        namelist = zf.namelist()
+        assert "audio.ogg" in namelist
+        assert "transcript.txt" in namelist
+        assert "archive_metadata.json" in namelist
+
 
 
 

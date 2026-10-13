@@ -48,7 +48,7 @@ from voicenotes.config import (
     config,
     get_models_dir,
 )
-from voicenotes.engine.audio_utils import AudioRecorder, format_timestamp
+from voicenotes.engine.audio_utils import AudioRecorder, compress_audio_file, format_timestamp
 from voicenotes.engine.model_manager import ModelManager
 from voicenotes.export.exporters import export_to_json
 from voicenotes.gui.styles import get_effective_theme, get_stylesheet
@@ -449,6 +449,12 @@ class SendVoiceDialog(QDialog):
         diar_str = f"Enabled ({spk_count} detected)" if config.get("diarization_enabled", True) else "Disabled"
         form.addRow("Speaker Diarization:", QLabel(diar_str))
 
+        self.combo_audio_format = QComboBox()
+        self.combo_audio_format.addItem("Compressed OGG Vorbis (.ogg) - Recommended (~90% smaller)", "ogg")
+        self.combo_audio_format.addItem("Compressed MP3 (.mp3) - Highly Compatible", "mp3")
+        self.combo_audio_format.addItem("Original Audio (Uncompressed)", "original")
+        form.addRow("Audio Compression:", self.combo_audio_format)
+
         layout.addWidget(grp_summary)
 
         # Optional User Feedback / Notes
@@ -538,7 +544,26 @@ class SendVoiceDialog(QDialog):
                     except Exception:
                         pass
 
-                # 4. Metadata and environment diagnostics
+                # 4. Audio file (compressed to .ogg or .mp3 if requested)
+                selected_fmt = self.combo_audio_format.currentData() if hasattr(self, "combo_audio_format") else "ogg"
+                comp_size = None
+                if self.audio_path and os.path.exists(self.audio_path):
+                    orig_p = Path(self.audio_path)
+                    if selected_fmt in ("ogg", "mp3"):
+                        compressed_temp = compress_audio_file(self.audio_path, target_format=selected_fmt)
+                        try:
+                            comp_size = os.path.getsize(compressed_temp)
+                            zf.write(str(compressed_temp), arcname=f"audio.{selected_fmt}")
+                        finally:
+                            if compressed_temp.exists() and compressed_temp.resolve() != orig_p.resolve():
+                                try:
+                                    os.remove(compressed_temp)
+                                except Exception:
+                                    pass
+                    else:
+                        zf.write(self.audio_path, arcname=f"audio{orig_p.suffix}")
+
+                # 5. Metadata and environment diagnostics
                 meta = {
                     "app_name": "VoiceNotes",
                     "app_version": __version__,
@@ -562,6 +587,8 @@ class SendVoiceDialog(QDialog):
                         "file_size": os.path.getsize(self.audio_path)
                         if self.audio_path and os.path.exists(self.audio_path)
                         else None,
+                        "compressed_format": selected_fmt,
+                        "compressed_size_bytes": comp_size,
                         "duration": getattr(self.transcript_result, "duration", None),
                         "duration_seconds": getattr(self.transcript_result, "duration", None),
                         "num_speakers": getattr(self.transcript_result, "num_speakers", None),
@@ -569,11 +596,6 @@ class SendVoiceDialog(QDialog):
                     "notes": notes,
                 }
                 zf.writestr("debug_metadata.json", json.dumps(meta, indent=2))
-
-                # 5. Audio file if present
-                if self.audio_path and os.path.exists(self.audio_path):
-                    p = Path(self.audio_path)
-                    zf.write(self.audio_path, arcname=f"audio{p.suffix}")
 
             return True
         except Exception as e:

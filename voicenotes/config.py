@@ -28,6 +28,18 @@ def get_bundle_dir() -> Path:
     return get_app_dir()
 
 
+def get_app_icon_path() -> Path:
+    """Return the path to the application icon."""
+    for base in (get_bundle_dir(), get_app_dir()):
+        png = base / "assets" / "app_icon.png"
+        if png.exists():
+            return png
+        ico = base / "assets" / "app_icon.ico"
+        if ico.exists():
+            return ico
+    return get_app_dir() / "assets" / "app_icon.png"
+
+
 def get_models_dir() -> Path:
     """
     Return the directory where offline models are stored.
