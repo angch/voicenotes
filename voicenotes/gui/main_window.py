@@ -11,7 +11,7 @@ import re
 from pathlib import Path
 from typing import Optional
 
-from PyQt6.QtCore import QPoint, Qt, QUrl, pyqtSlot
+from PyQt6.QtCore import QPoint, Qt, QTimer, QUrl, pyqtSlot
 from PyQt6.QtGui import (
     QAction,
     QColor,

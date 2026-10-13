@@ -46,9 +46,12 @@ class AudioPlayerWidget(QWidget):
         self.player.setAudioOutput(self.audio_output)
         self.audio_output.setVolume(1.0)
 
+        self._pending_seek_ms: Optional[int] = None
+
         self.player.positionChanged.connect(self._on_position_changed)
         self.player.durationChanged.connect(self._on_duration_changed)
         self.player.playbackStateChanged.connect(self._on_playback_state_changed)
+        self.player.mediaStatusChanged.connect(self._on_media_status_changed)
 
     def _init_ui(self) -> None:
         layout = QHBoxLayout(self)
@@ -110,6 +113,7 @@ class AudioPlayerWidget(QWidget):
     def load_file(self, file_path: str) -> None:
         """Load an audio file into the player."""
         self._current_file = file_path
+        self._pending_seek_ms = None
         url = QUrl.fromLocalFile(file_path)
         self.player.setSource(url)
         self.btn_play_pause.setEnabled(True)
@@ -136,9 +140,22 @@ class AudioPlayerWidget(QWidget):
         if not self._current_file:
             return
         target_ms = max(0, int(seconds * 1000))
-        self.player.setPosition(target_ms)
+        if self.player.mediaStatus() in (
+            QMediaPlayer.MediaStatus.NoMedia,
+            QMediaPlayer.MediaStatus.LoadingMedia,
+        ):
+            self._pending_seek_ms = target_ms
+        else:
+            self.player.setPosition(target_ms)
+
         if auto_play and self.player.playbackState() != QMediaPlayer.PlaybackState.PlayingState:
             self.play()
+
+    def _on_media_status_changed(self, status: QMediaPlayer.MediaStatus) -> None:
+        if status in (QMediaPlayer.MediaStatus.LoadedMedia, QMediaPlayer.MediaStatus.BufferedMedia):
+            if self._pending_seek_ms is not None:
+                self.player.setPosition(self._pending_seek_ms)
+                self._pending_seek_ms = None
 
     def seek_relative(self, delta_seconds: float) -> None:
         """Jump relative to current position."""
