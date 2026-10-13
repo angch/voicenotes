@@ -34,21 +34,21 @@ def build():
     cmd = [sys.executable, "-m", "PyInstaller", "--noconfirm", "VoiceNotes.spec"]
     result = subprocess.run(cmd, cwd=str(root_dir))
     if result.returncode != 0:
-        print(f"\n❌ Build failed with return code {result.returncode}", file=sys.stderr)
+        print(f"\n[ERROR] Build failed with return code {result.returncode}", file=sys.stderr)
         sys.exit(result.returncode)
 
     output_exe = dist_dir / "VoiceNotes" / "VoiceNotes.exe"
     if output_exe.exists():
         size_mb = os.path.getsize(output_exe) / (1024 * 1024)
         print("\n=========================================================")
-        print(" ✅ BUILD SUCCESSFUL!")
+        print(" [SUCCESS] BUILD COMPLETE!")
         print(f" Standalone Application: {output_exe}")
         print(f" Executable Size: {size_mb:.2f} MB")
         print(" Portable Directory: dist/VoiceNotes/")
         print(" Anyone can run this without Python installed!")
         print("=========================================================")
     else:
-        print(f"\n❌ Output executable not found at {output_exe}", file=sys.stderr)
+        print(f"\n[ERROR] Output executable not found at {output_exe}", file=sys.stderr)
         sys.exit(1)
 
 
