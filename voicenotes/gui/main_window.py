@@ -120,8 +120,6 @@ class MainWindow(QMainWindow):
         self._update_status_bar()
 
     def _init_ui(self):
-        self._create_menus()
-
         # Central layout
         central_widget = QWidget(self)
         self.setCentralWidget(central_widget)
@@ -246,6 +244,9 @@ class MainWindow(QMainWindow):
         self.status_bar.addWidget(self.lbl_doc_status, 1)
         self.status_bar.addPermanentWidget(self.lbl_doc_stats)
         self.status_bar.addPermanentWidget(self.lbl_device_status)
+
+        # Build menus after all controls and widgets exist
+        self._create_menus()
 
     def _create_menus(self):
         menubar = self.menuBar()
