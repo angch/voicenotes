@@ -50,6 +50,7 @@ hiddenimports = [
     'voicenotes.gui.dialogs',
     'voicenotes.gui.main_window',
     'voicenotes.gui.styles',
+    'voicenotes.gui.speakers_panel',
     'voicenotes.gui.transcription_worker',
 ]
 

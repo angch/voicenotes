@@ -35,7 +35,7 @@ class TranscriptionWorker(QThread):
         self,
         transcriber: SpeechTranscriber,
         audio_source: Union[str, Path, np.ndarray],
-        model_name: str = "base",
+        model_name: str = "small",
         language: Optional[str] = None,
         diarize: bool = True,
         num_speakers: Optional[Union[int, str]] = None,

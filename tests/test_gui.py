@@ -29,6 +29,8 @@ def test_main_window_init(app_window):
     assert win.editor is not None
     assert win.player_widget is not None
     assert win.panel_speech is not None
+    assert win.speakers_panel is not None
+    assert win.btn_detect_speakers is not None
     assert win.btn_transcribe is not None
     assert win.status_bar is not None
 
@@ -166,10 +168,8 @@ def test_live_transcription_gui_workflow(app_window, qtbot):
     win.load_audio_file(str(sample))
 
     # Configure fast test parameters
-    idx_tiny = win.combo_model.findData("tiny")
-    if idx_tiny >= 0:
-        win.combo_model.setCurrentIndex(idx_tiny)
-    win.chk_diar.setChecked(False)  # Single speaker test
+    config.set("model", "tiny")
+    win.btn_detect_speakers.setChecked(False)  # Single speaker test
 
     # Click transcribe button
     qtbot.mouseClick(win.btn_transcribe, Qt.MouseButton.LeftButton)
@@ -185,3 +185,67 @@ def test_live_transcription_gui_workflow(app_window, qtbot):
     assert len(win.current_result.segments) >= 1
     assert win.editor.toPlainText() != ""
     assert win.btn_transcribe.isEnabled() is True
+
+
+def test_realtime_segment_streaming(app_window):
+    """Test that incoming segments stream directly into the editor in real-time."""
+    from voicenotes.engine.transcriber import TranscriptionSegment
+    win = app_window
+    win.editor.clear()
+
+    seg1 = TranscriptionSegment(id=1, start=0.0, end=2.0, text="First streamed line.")
+    win._on_worker_segment(seg1)
+    assert "First streamed line" in win.editor.toPlainText()
+
+    seg2 = TranscriptionSegment(id=2, start=2.5, end=4.0, text="Second streamed line.")
+    win._on_worker_segment(seg2)
+    assert "First streamed line" in win.editor.toPlainText()
+    assert "Second streamed line" in win.editor.toPlainText()
+
+
+def test_speakers_panel_and_rename(app_window):
+    """Test that detected speakers populate the speakers panel and renaming updates the editor."""
+    from voicenotes.engine.transcriber import TranscriptionResult, TranscriptionSegment
+    win = app_window
+
+    seg1 = TranscriptionSegment(id=1, start=0.0, end=2.0, text="Hello world", speaker="Speaker 1")
+    seg2 = TranscriptionSegment(id=2, start=2.5, end=5.0, text="Hi there", speaker="Speaker 2")
+    res = TranscriptionResult(
+        audio_path="test.wav",
+        duration=5.0,
+        language="en",
+        language_probability=0.99,
+        segments=[seg1, seg2],
+        model_name="tiny",
+        num_speakers=2,
+        diarization_enabled=True,
+    )
+
+    win._on_worker_finished(res)
+
+    # Verify editor has speaker tags
+    assert "Speaker 1" in win.editor.toPlainText()
+    assert "Speaker 2" in win.editor.toPlainText()
+
+    # Verify speakers panel count
+    assert win.speakers_panel.lbl_count.text() == "(2)"
+
+    # Rename Speaker 1 to "Alice"
+    win._on_speaker_renamed("Speaker 1", "Alice")
+
+    # Verify editor updated
+    assert "Alice" in win.editor.toPlainText()
+    assert "Speaker 1" not in win.editor.toPlainText()
+    assert win.current_result.segments[0].speaker == "Alice"
+
+
+def test_detect_speakers_toggle(app_window):
+    """Test toggling the Detect Speakers button."""
+    win = app_window
+    win.btn_detect_speakers.setChecked(True)
+    assert config.get("diarization_enabled") is True
+    assert "ON" in win.btn_detect_speakers.text()
+
+    win.btn_detect_speakers.setChecked(False)
+    assert config.get("diarization_enabled") is False
+    assert "OFF" in win.btn_detect_speakers.text()

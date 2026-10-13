@@ -69,14 +69,14 @@ AVAILABLE_WHISPER_MODELS = {
         "default_compute": "int8",
     },
     "base": {
-        "name": "Base (Recommended)",
-        "description": "Fast & balanced (~145 MB), great accuracy for meetings & notes",
+        "name": "Base",
+        "description": "Fast & lightweight (~145 MB), good for clean audio",
         "size_mb": 145,
         "default_compute": "int8",
     },
     "small": {
-        "name": "Small",
-        "description": "High accuracy (~480 MB), requires more RAM",
+        "name": "Small (Recommended)",
+        "description": "High accuracy (~480 MB), optimized for near real-time streaming",
         "size_mb": 480,
         "default_compute": "int8",
     },
@@ -111,7 +111,7 @@ SUPPORTED_LANGUAGES = [
 ]
 
 DEFAULT_SETTINGS: Dict[str, Any] = {
-    "model": "base",
+    "model": "small",
     "language": "auto",
     "device": "auto",  # 'auto', 'cuda', 'cpu'
     "diarization_enabled": True,

@@ -36,6 +36,7 @@ from PyQt6.QtWidgets import (
     QMessageBox,
     QProgressBar,
     QPushButton,
+    QSplitter,
     QStatusBar,
     QTextEdit,
     QVBoxLayout,
@@ -66,6 +67,7 @@ from voicenotes.export.exporters import (
 from voicenotes.gui.audio_player import AudioPlayerWidget
 from voicenotes.gui.dialogs import AboutDialog, RecordDialog, SettingsDialog
 from voicenotes.gui.styles import get_stylesheet
+from voicenotes.gui.speakers_panel import SPEAKER_COLORS, SpeakersPanel
 from voicenotes.gui.transcription_worker import TranscriptionWorker
 
 
@@ -134,16 +136,16 @@ class MainWindow(QMainWindow):
         panel_layout.setContentsMargins(10, 8, 10, 8)
         panel_layout.setSpacing(8)
 
-        # Row 1: Source & Model Controls
+        # Row 1: Source & Transcription Controls
         row1_layout = QHBoxLayout()
         row1_layout.setSpacing(8)
 
-        self.btn_open_audio = QPushButton("📁 Open Audio / Video")
+        self.btn_open_audio = QPushButton("📁 Open Audio")
         self.btn_open_audio.setToolTip("Open audio or video file (WAV, MP3, M4A, FLAC, MP4...)")
         self.btn_open_audio.clicked.connect(self._on_open_audio_dialog)
         row1_layout.addWidget(self.btn_open_audio)
 
-        self.btn_record = QPushButton("🔴 Record Mic")
+        self.btn_record = QPushButton("🔴 Record")
         self.btn_record.setObjectName("recordButton")
         self.btn_record.setToolTip("Record speech from microphone")
         self.btn_record.clicked.connect(self._on_record_mic)
@@ -155,38 +157,16 @@ class MainWindow(QMainWindow):
         self.lbl_audio_name.setMinimumWidth(120)
         row1_layout.addWidget(self.lbl_audio_name, stretch=1)
 
-        # Model selector
-        row1_layout.addWidget(QLabel("Model:"))
-        self.combo_model = QComboBox()
-        for k, v in AVAILABLE_WHISPER_MODELS.items():
-            self.combo_model.addItem(v["name"], k)
-        saved_model = config.get("model", "base")
-        idx = self.combo_model.findData(saved_model)
-        if idx >= 0:
-            self.combo_model.setCurrentIndex(idx)
-        row1_layout.addWidget(self.combo_model)
-
-        # Language selector
-        row1_layout.addWidget(QLabel("Language:"))
-        self.combo_lang = QComboBox()
-        for code, name in SUPPORTED_LANGUAGES:
-            self.combo_lang.addItem(name, code)
-        row1_layout.addWidget(self.combo_lang)
-
-        # Diarization toggle
-        self.chk_diar = QCheckBox("Detect Speakers")
-        self.chk_diar.setToolTip("Offline multi-speaker tagging (Diarization)")
-        self.chk_diar.setChecked(config.get("diarization_enabled", True))
-        row1_layout.addWidget(self.chk_diar)
-
-        # Speakers hint
-        self.combo_speakers = QComboBox()
-        self.combo_speakers.setToolTip("Expected number of speakers")
-        self.combo_speakers.addItem("Auto", "auto")
-        self.combo_speakers.addItem("2 Speakers", "2")
-        self.combo_speakers.addItem("3 Speakers", "3")
-        self.combo_speakers.addItem("4 Speakers", "4")
-        row1_layout.addWidget(self.combo_speakers)
+        # Diarization toggle button ("Detect speakers")
+        self.btn_detect_speakers = QPushButton("👥 Detect speakers")
+        self.btn_detect_speakers.setCheckable(True)
+        self.btn_detect_speakers.setChecked(config.get("diarization_enabled", True))
+        self.btn_detect_speakers.setToolTip("Toggle offline speaker identification")
+        self.btn_detect_speakers.toggled.connect(self._on_toggle_detect_speakers)
+        row1_layout.addWidget(self.btn_detect_speakers)
+        # Compatibility alias for chk_diar
+        self.chk_diar = self.btn_detect_speakers
+        self._update_detect_speakers_style()
 
         # Transcribe Action Button
         self.btn_transcribe = QPushButton("▶ Transcribe")
@@ -227,11 +207,24 @@ class MainWindow(QMainWindow):
 
         main_layout.addWidget(self.panel_speech)
 
-        # Central Notepad Text Editor
+        # Splitter: Central Notepad Text Editor (Left) + Speakers Panel (Right)
+        self.splitter = QSplitter(Qt.Orientation.Horizontal)
+
         self.editor = NotepadTextEdit(self)
         self.editor.setFont(QFont("Consolas", config.get("font_size", 13)))
         self.editor.textChanged.connect(self._on_text_modified)
-        main_layout.addWidget(self.editor, stretch=1)
+        self.splitter.addWidget(self.editor)
+
+        self.speakers_panel = SpeakersPanel(self)
+        self.speakers_panel.speaker_renamed.connect(self._on_speaker_renamed)
+        self.speakers_panel.play_speaker_sample.connect(self._on_play_speaker_sample)
+        self.splitter.addWidget(self.speakers_panel)
+
+        self.splitter.setStretchFactor(0, 4)
+        self.splitter.setStretchFactor(1, 1)
+        self.splitter.setSizes([720, 240])
+
+        main_layout.addWidget(self.splitter, stretch=1)
 
         # Status Bar
         self.status_bar = QStatusBar(self)
@@ -398,6 +391,12 @@ class MainWindow(QMainWindow):
         self.act_speech_panel.triggered.connect(self._toggle_speech_panel)
         menu_view.addAction(self.act_speech_panel)
 
+        self.act_speakers_panel = QAction("Show Speakers Panel", self)
+        self.act_speakers_panel.setCheckable(True)
+        self.act_speakers_panel.setChecked(True)
+        self.act_speakers_panel.triggered.connect(self._toggle_speakers_panel)
+        menu_view.addAction(self.act_speakers_panel)
+
         self.act_dark = QAction("&Dark Mode", self)
         self.act_dark.setCheckable(True)
         self.act_dark.setChecked(config.get("theme", "light") == "dark")
@@ -453,6 +452,26 @@ class MainWindow(QMainWindow):
 
     def _toggle_speech_panel(self):
         self.panel_speech.setVisible(self.act_speech_panel.isChecked())
+
+    def _toggle_speakers_panel(self):
+        self.speakers_panel.setVisible(self.act_speakers_panel.isChecked())
+
+    def _on_toggle_detect_speakers(self, checked: bool):
+        config.set("diarization_enabled", checked)
+        self._update_detect_speakers_style()
+
+    def _update_detect_speakers_style(self):
+        checked = self.btn_detect_speakers.isChecked()
+        if checked:
+            self.btn_detect_speakers.setText("👥 Detect speakers: ON")
+            self.btn_detect_speakers.setStyleSheet(
+                "QPushButton { background-color: #e7f3ff; color: #0067c0; border: 1px solid #0067c0; font-weight: 600; padding: 4px 10px; border-radius: 4px; }"
+            )
+        else:
+            self.btn_detect_speakers.setText("👥 Detect speakers: OFF")
+            self.btn_detect_speakers.setStyleSheet(
+                "QPushButton { background-color: #f1f3f5; color: #6c757d; border: 1px solid #ced4da; padding: 4px 10px; border-radius: 4px; }"
+            )
 
     def _increase_font(self):
         font = self.editor.font()
@@ -513,10 +532,9 @@ class MainWindow(QMainWindow):
         if not self.current_audio_file:
             return
 
-        model_key = self.combo_model.currentData()
-        lang_key = self.combo_lang.currentData()
-        diarize = self.chk_diar.isChecked()
-        speakers_hint = self.combo_speakers.currentData()
+        model_key = config.get("model", "small")
+        lang_key = config.get("language", None)
+        diarize = self.btn_detect_speakers.isChecked()
 
         # Update UI state
         self.btn_transcribe.setEnabled(False)
@@ -524,8 +542,9 @@ class MainWindow(QMainWindow):
         self.progress_bar.setValue(0)
         self.lbl_progress.setText("Starting offline transcription...")
 
-        # Clear or prepare editor
+        # Clear editor and speakers panel
         self.editor.clear()
+        self.speakers_panel.clear()
 
         # Start worker thread
         self.worker = TranscriptionWorker(
@@ -534,7 +553,7 @@ class MainWindow(QMainWindow):
             model_name=model_key,
             language=lang_key,
             diarize=diarize,
-            num_speakers=speakers_hint,
+            num_speakers="auto",
             parent=self,
         )
         self.worker.progress_updated.connect(self._on_worker_progress)
@@ -548,8 +567,24 @@ class MainWindow(QMainWindow):
         self.progress_bar.setValue(percent)
 
     def _on_worker_segment(self, seg: TranscriptionSegment):
-        # Stream segment into editor as it's transcribed
-        pass
+        """Stream transcription segment directly into the notes in real-time."""
+        is_dark = config.get("theme", "light") == "dark"
+        ts_color = "#4dabf7" if is_dark else "#0067c0"
+        text_color = "#f0f0f0" if is_dark else "#1a1a1a"
+
+        ts_str = seg.timestamp_str
+        start_sec = seg.start
+        link_html = f'<a href="time:{start_sec:.2f}" style="color: {ts_color}; text-decoration: none; font-weight: bold; font-family: monospace;">{ts_str}</a>'
+        text_html = f'<span style="color: {text_color};"> {seg.text.strip()}</span>'
+        paragraph = f"<p style='margin: 4px 0;'>{link_html}{text_html}</p>"
+
+        # Move cursor to end and insert HTML
+        cursor = self.editor.textCursor()
+        cursor.movePosition(QTextCursor.MoveOperation.End)
+        cursor.insertHtml(paragraph)
+        self.editor.setTextCursor(cursor)
+        self.editor.ensureCursorVisible()
+        self._update_status_bar()
 
     def _on_worker_finished(self, result: TranscriptionResult):
         self.current_result = result
@@ -560,16 +595,31 @@ class MainWindow(QMainWindow):
         # Hide progress frame after brief pause
         QTimer.singleShot(1500, lambda: self.progress_frame.setVisible(False))
 
-        # Format full result into rich HTML with clickable timestamp links
+        # Re-render full result into rich HTML with clickable timestamps and speaker badges
         self._render_transcript_html(result)
+
+        # Populate speakers panel
+        if result.diarization_enabled:
+            self.speakers_panel.update_speakers(result.segments)
+        else:
+            self.speakers_panel.clear()
 
     def _render_transcript_html(self, result: TranscriptionResult):
         """Render transcript with clickable timestamp anchors and speaker badges."""
         html_parts = []
         is_dark = config.get("theme", "light") == "dark"
         ts_color = "#4dabf7" if is_dark else "#0067c0"
-        spk_color = "#38d9a9" if is_dark else "#087f5b"
         text_color = "#f0f0f0" if is_dark else "#1a1a1a"
+
+        # Map speakers to distinct palette colors matching the speakers panel
+        speaker_color_map = {}
+        distinct_speakers = []
+        for s in result.segments:
+            if s.speaker and s.speaker not in distinct_speakers:
+                distinct_speakers.append(s.speaker)
+        for idx, spk in enumerate(distinct_speakers):
+            fg, _ = SPEAKER_COLORS[idx % len(SPEAKER_COLORS)]
+            speaker_color_map[spk] = fg
 
         for seg in result.segments:
             ts_str = seg.timestamp_str
@@ -578,7 +628,8 @@ class MainWindow(QMainWindow):
 
             speaker_html = ""
             if result.diarization_enabled and seg.speaker:
-                speaker_html = f'<b style="color: {spk_color};"> {seg.speaker}:</b>'
+                spk_col = speaker_color_map.get(seg.speaker, "#087f5b")
+                speaker_html = f' <b style="color: {spk_col};">{seg.speaker}:</b>'
 
             content_html = f'<span style="color: {text_color};"> {seg.text.strip()}</span>'
             html_parts.append(f"<p style='margin: 4px 0;'>{link_html}{speaker_html}{content_html}</p>")
@@ -586,6 +637,30 @@ class MainWindow(QMainWindow):
         self.editor.setHtml("".join(html_parts))
         self._is_modified = False
         self._update_status_bar()
+
+    def _on_speaker_renamed(self, old_name: str, new_name: str):
+        """Update speaker label across all segments and notes."""
+        if not new_name or old_name == new_name:
+            return
+
+        if self.current_result:
+            for seg in self.current_result.segments:
+                if seg.speaker == old_name:
+                    seg.speaker = new_name
+            self._render_transcript_html(self.current_result)
+        else:
+            content = self.editor.toHtml()
+            content = content.replace(f"{old_name}:", f"{new_name}:")
+            self.editor.setHtml(content)
+
+        self._is_modified = True
+        self._update_status_bar()
+        self.status_bar.showMessage(f"Renamed speaker '{old_name}' to '{new_name}'", 3000)
+
+    def _on_play_speaker_sample(self, start_sec: float):
+        """Play audio sample of the selected speaker."""
+        if self.player_widget:
+            self.player_widget.seek_to(start_sec, auto_play=True)
 
     def _on_worker_error(self, err_msg: str):
         self.progress_frame.setVisible(False)
@@ -629,6 +704,7 @@ class MainWindow(QMainWindow):
 
     def _on_new_file(self):
         self.editor.clear()
+        self.speakers_panel.clear()
         self.current_text_file = None
         self.current_result = None
         self._is_modified = False

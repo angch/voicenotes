@@ -118,7 +118,7 @@ class SpeechTranscriber:
 
     def load_model(
         self,
-        model_name: str = "base",
+        model_name: str = "small",
         device: str = "auto",
         progress_callback: Optional[Callable[[str], None]] = None,
     ) -> WhisperModel:
@@ -167,7 +167,7 @@ class SpeechTranscriber:
     def transcribe(
         self,
         audio_source: Union[str, Path, np.ndarray],
-        model_name: str = "base",
+        model_name: str = "small",
         language: Optional[str] = None,
         diarize: bool = True,
         num_speakers: Optional[Union[int, str]] = None,
@@ -217,14 +217,15 @@ class SpeechTranscriber:
             raw_segments_gen, info = model.transcribe(
                 audio,
                 language=lang_param,
-                beam_size=5,
+                beam_size=1,
+                best_of=1,
+                temperature=0.0,
                 vad_filter=True,
                 vad_parameters=dict(min_silence_duration_ms=400),
                 word_timestamps=True,
             )
             detected_lang = info.language
             lang_prob = info.language_probability
-            raw_segs_list = list(raw_segments_gen)
         except Exception as e:
             if self._current_device == "cuda":
                 logger.warning(f"CUDA execution failed ({e}), falling back to CPU.")
@@ -234,20 +235,23 @@ class SpeechTranscriber:
                 raw_segments_gen, info = model.transcribe(
                     audio,
                     language=lang_param,
-                    beam_size=5,
+                    beam_size=1,
+                    best_of=1,
+                    temperature=0.0,
                     vad_filter=True,
                     vad_parameters=dict(min_silence_duration_ms=400),
                     word_timestamps=True,
                 )
                 detected_lang = info.language
                 lang_prob = info.language_probability
-                raw_segs_list = list(raw_segments_gen)
             else:
                 raise e
 
         collected_segments: List[Dict[str, Any]] = []
-        total_segs = max(1, len(raw_segs_list))
-        for idx, seg in enumerate(raw_segs_list):
+        seg_idx = 0
+
+        for seg in raw_segments_gen:
+            seg_idx += 1
             words = []
             if seg.words:
                 for w in seg.words:
@@ -261,7 +265,7 @@ class SpeechTranscriber:
                     )
 
             seg_dict = {
-                "id": idx + 1,
+                "id": seg_idx,
                 "start": seg.start,
                 "end": seg.end,
                 "text": seg.text,
@@ -270,10 +274,27 @@ class SpeechTranscriber:
             }
             collected_segments.append(seg_dict)
 
-            # Update progress
-            pct = 25 + int(50 * (idx + 1) / total_segs)
+            # Stream segment live in real-time
+            seg_obj = TranscriptionSegment(
+                id=seg_idx,
+                start=seg.start,
+                end=seg.end,
+                text=seg.text,
+                speaker=None,
+                words=words,
+            )
+            if segment_callback:
+                segment_callback(seg_obj)
+
+            if duration > 0:
+                pct = min(75, 25 + int(50 * (seg.end / duration)))
+            else:
+                pct = 50
             if progress_callback:
-                progress_callback(f"Transcribed {idx + 1}/{total_segs} segments...", pct)
+                progress_callback(
+                    f"Transcribing ({format_timestamp(seg.end)} / {format_timestamp(duration)})...",
+                    pct,
+                )
 
         # Diarization step
         unique_speakers = 1
@@ -327,9 +348,6 @@ class SpeechTranscriber:
                 prev.words.extend(seg_obj.words)
             else:
                 merged_segments.append(seg_obj)
-
-            if segment_callback:
-                segment_callback(seg_obj)
 
         if progress_callback:
             elapsed = time.time() - start_time
