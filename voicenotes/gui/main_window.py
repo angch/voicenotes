@@ -66,7 +66,7 @@ from voicenotes.export.exporters import (
     save_export_to_file,
 )
 from voicenotes.gui.audio_player import AudioPlayerWidget
-from voicenotes.gui.dialogs import AboutDialog, RecordDialog, SettingsDialog
+from voicenotes.gui.dialogs import AboutDialog, RecordDialog, SendVoiceDialog, SettingsDialog
 from voicenotes.gui.find_bar import FindReplaceBar
 from voicenotes.gui.styles import create_palette, get_effective_theme, get_stylesheet
 from voicenotes.gui.speakers_panel import (
@@ -109,6 +109,18 @@ class NotepadTextEdit(QTextEdit):
                 pass
 
         super().mousePressEvent(event)
+
+    def contextMenuEvent(self, event):
+        menu = self.createStandardContextMenu()
+        menu.addSeparator()
+        main_win = self.window()
+        if hasattr(main_win, "_copy_plain_text"):
+            act_plain = menu.addAction("Copy Text (No Timestamps)")
+            act_plain.triggered.connect(main_win._copy_plain_text)
+        if hasattr(main_win, "_copy_timestamped_text"):
+            act_time = menu.addAction("Copy with Timestamps")
+            act_time.triggered.connect(main_win._copy_timestamped_text)
+        menu.exec(event.globalPos())
 
 
 class MainWindow(QMainWindow):
@@ -244,6 +256,33 @@ class MainWindow(QMainWindow):
 
         self.find_bar = FindReplaceBar(self.editor, self)
         editor_layout.addWidget(self.find_bar)
+
+        # Editor Quick Action Bar (Copy to clipboard & Tuning Feedback)
+        self.action_bar = QWidget()
+        self.action_bar.setObjectName("editorActionBar")
+        action_layout = QHBoxLayout(self.action_bar)
+        action_layout.setContentsMargins(8, 4, 8, 4)
+        action_layout.setSpacing(6)
+
+        self.btn_copy_plain = QPushButton("Copy Text")
+        self.btn_copy_plain.setToolTip("Copy plain spoken text to clipboard without timestamps (Ctrl+Shift+C)")
+        self.btn_copy_plain.clicked.connect(self._copy_plain_text)
+        action_layout.addWidget(self.btn_copy_plain)
+
+        self.btn_copy_timestamps = QPushButton("Copy with Timestamps")
+        self.btn_copy_timestamps.setToolTip("Copy full transcript including timestamps and speaker labels")
+        self.btn_copy_timestamps.clicked.connect(self._copy_timestamped_text)
+        action_layout.addWidget(self.btn_copy_timestamps)
+
+        action_layout.addStretch(1)
+
+        self.btn_send_voice = QPushButton("Send Voice for Tuning...")
+        self.btn_send_voice.setObjectName("btnSendVoice")
+        self.btn_send_voice.setToolTip("Package and send this voice recording & transcript to developers for tuning and accuracy improvements")
+        self.btn_send_voice.clicked.connect(self._on_send_voice_sample)
+        action_layout.addWidget(self.btn_send_voice)
+
+        editor_layout.addWidget(self.action_bar)
         editor_layout.addWidget(self.editor, stretch=1)
 
         self.splitter.addWidget(editor_container)
@@ -371,6 +410,11 @@ class MainWindow(QMainWindow):
         act_copy_plain.triggered.connect(self._copy_plain_text)
         menu_edit.addAction(act_copy_plain)
 
+        act_copy_time = QAction("Copy with Timestamps", self)
+        act_copy_time.setShortcut("Ctrl+Shift+T")
+        act_copy_time.triggered.connect(self._copy_timestamped_text)
+        menu_edit.addAction(act_copy_time)
+
         menu_edit.addSeparator()
 
         act_find = QAction("&Find in Note...", self)
@@ -437,6 +481,13 @@ class MainWindow(QMainWindow):
         act_settings.setShortcut("Ctrl+,")
         act_settings.triggered.connect(self._on_open_settings)
         menu_speech.addAction(act_settings)
+
+        menu_speech.addSeparator()
+
+        act_send_voice = QAction("Send &Voice Sample for Tuning...", self)
+        act_send_voice.setToolTip("Package and send audio clip and transcript for model tuning and accuracy debugging")
+        act_send_voice.triggered.connect(self._on_send_voice_sample)
+        menu_speech.addAction(act_send_voice)
 
         # --- View Menu ---
         menu_view = menubar.addMenu("&View")
@@ -511,6 +562,10 @@ class MainWindow(QMainWindow):
                     act_s = QAction(label, self)
                     act_s.triggered.connect(lambda checked, p=str(path): self.load_audio_file(p))
                     menu_samples.addAction(act_s)
+
+        act_send_voice_help = QAction("Send Voice Sample for Tuning...", self)
+        act_send_voice_help.triggered.connect(self._on_send_voice_sample)
+        menu_help.addAction(act_send_voice_help)
 
         menu_help.addSeparator()
 
@@ -1014,15 +1069,54 @@ class MainWindow(QMainWindow):
             self.btn_transcribe.setEnabled(True)
 
     def _copy_plain_text(self):
-        if self.current_result:
+        cursor = self.editor.textCursor()
+        selected_text = cursor.selectedText()
+        if selected_text:
+            plain = re.sub(r"\[\d{1,2}:\d{2}(?::\d{2})?.*?\]\s*(?:Speaker \d+:)?\s*", "", selected_text.replace("\u2029", "\n"))
+        elif self.current_result:
             plain = self.current_result.plain_text
         else:
-            # Strip timestamps from text
             raw = self.editor.toPlainText()
             plain = re.sub(r"\[\d{1,2}:\d{2}(?::\d{2})?.*?\]\s*(?:Speaker \d+:)?\s*", "", raw)
         clipboard = QApplication.clipboard()
         clipboard.setText(plain.strip())
         self.status_bar.showMessage("Plain text copied to clipboard!", 3000)
+        if hasattr(self, "btn_copy_plain"):
+            self.btn_copy_plain.setText("✓ Copied!")
+            QTimer.singleShot(1500, lambda: self.btn_copy_plain.setText("Copy Text"))
+
+    def _copy_timestamped_text(self):
+        cursor = self.editor.textCursor()
+        selected_text = cursor.selectedText()
+        if selected_text:
+            content = selected_text.replace("\u2029", "\n")
+        elif self.current_result and getattr(self.current_result, "segments", None):
+            lines = [s.to_formatted_line(include_speaker=True) for s in self.current_result.segments]
+            content = "\n".join(lines)
+        else:
+            content = self.editor.toPlainText()
+        clipboard = QApplication.clipboard()
+        clipboard.setText(content.strip())
+        self.status_bar.showMessage("Timestamped transcript copied to clipboard!", 3000)
+        if hasattr(self, "btn_copy_timestamps"):
+            self.btn_copy_timestamps.setText("✓ Copied!")
+            QTimer.singleShot(1500, lambda: self.btn_copy_timestamps.setText("Copy with Timestamps"))
+
+    def _on_send_voice_sample(self):
+        if not self.current_audio_file or not os.path.exists(self.current_audio_file):
+            QMessageBox.information(
+                self,
+                "Send Voice Sample",
+                "No audio file loaded or recorded yet.\n\nOpen an audio file or record from microphone first before submitting a sample for tuning.",
+            )
+            return
+        dlg = SendVoiceDialog(
+            audio_path=self.current_audio_file,
+            transcript_text=self.editor.toPlainText(),
+            transcript_result=self.current_result,
+            parent=self,
+        )
+        dlg.exec()
 
     def _export_as(self, fmt: str):
         if not self.current_result:

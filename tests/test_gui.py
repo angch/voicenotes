@@ -491,4 +491,119 @@ def test_dual_pass_live_draft_and_refinement(app_window):
     win._is_recording = False
 
 
+def test_clipboard_copy_buttons(app_window, qtbot):
+    """Test clipboard copy actions for both plain text and timestamped transcripts."""
+    from PyQt6.QtWidgets import QApplication
+    from voicenotes.engine.transcriber import TranscriptionResult, TranscriptionSegment
+
+    win = app_window
+    clipboard = QApplication.clipboard()
+
+    # Create dummy result with timestamps and speaker tags
+    seg1 = TranscriptionSegment(id=1, start=0.0, end=2.5, text="Hello world from VoiceNotes.", speaker="Speaker 1")
+    seg2 = TranscriptionSegment(id=2, start=3.0, end=5.5, text="This is a second sentence.", speaker="Speaker 2")
+    win.current_result = TranscriptionResult(
+        audio_path="test.wav",
+        duration=5.5,
+        language="en",
+        language_probability=0.99,
+        segments=[seg1, seg2],
+        model_name="small",
+        num_speakers=2,
+        diarization_enabled=True,
+    )
+    win.editor.setPlainText(
+        "[00:00 - 00:02] Speaker 1: Hello world from VoiceNotes.\n[00:03 - 00:05] Speaker 2: This is a second sentence."
+    )
+
+    # 1. Test Copy Plain Text
+    win.btn_copy_plain.click()
+    assert "Hello world from VoiceNotes." in clipboard.text()
+    assert "[00:00" not in clipboard.text()
+    assert win.btn_copy_plain.text() == "✓ Copied!"
+
+    # 2. Test Copy with Timestamps
+    win.btn_copy_timestamps.click()
+    assert "[00:00" in clipboard.text()
+    assert "Speaker 1" in clipboard.text()
+    assert "Speaker 2" in clipboard.text()
+    assert win.btn_copy_timestamps.text() == "✓ Copied!"
+
+    # 3. Test Copy Selected Text (Plain)
+    cursor = win.editor.textCursor()
+    cursor.setPosition(0)
+    cursor.setPosition(40, cursor.MoveMode.KeepAnchor)
+    win.editor.setTextCursor(cursor)
+
+    win._copy_plain_text()
+    # Should contain selected text stripped of timestamps
+    assert "Hello world" in clipboard.text()
+
+
+def test_send_voice_dialog_and_bundle(tmp_path, app_window, qtbot):
+    """Test SendVoiceDialog bundle generation with audio, metadata, notes, and transcript."""
+    import json
+    import zipfile
+    from voicenotes.engine.transcriber import TranscriptionResult, TranscriptionSegment
+    from voicenotes.gui.dialogs import SendVoiceDialog
+
+    win = app_window
+    jfk_sample = Path("samples/jfk.flac").resolve()
+    win.load_audio_file(str(jfk_sample))
+
+    seg = TranscriptionSegment(id=1, start=0.0, end=11.0, text="And so, my fellow Americans...", speaker="Speaker 1")
+    res = TranscriptionResult(
+        audio_path=str(jfk_sample),
+        duration=11.0,
+        language="en",
+        language_probability=0.99,
+        segments=[seg],
+        model_name="small",
+        num_speakers=1,
+        diarization_enabled=True,
+    )
+    win.current_result = res
+    win.editor.setPlainText("[00:00 - 00:11] Speaker 1: And so, my fellow Americans...")
+
+    dlg = SendVoiceDialog(
+        audio_path=win.current_audio_file,
+        transcript_text=win.editor.toPlainText(),
+        transcript_result=res,
+        parent=win,
+    )
+    qtbot.addWidget(dlg)
+    dlg.show()
+
+    # Enter user notes
+    dlg.edit_notes.setPlainText("Accent test: JFK inaugural address sample.")
+
+    # Build zip bundle to tmp_path
+    target_zip = tmp_path / "test_debug_bundle.zip"
+    success = dlg._build_bundle(target_zip)
+    assert success is True
+    assert target_zip.exists()
+
+    # Verify zip content
+    with zipfile.ZipFile(target_zip, "r") as zf:
+        namelist = zf.namelist()
+        assert "feedback_notes.txt" in namelist
+        assert "transcript.txt" in namelist
+        assert "transcript.json" in namelist
+        assert "debug_metadata.json" in namelist
+        # Audio file included
+        assert any(n.startswith("audio.") for n in namelist)
+
+        # Check metadata json
+        meta_data = json.loads(zf.read("debug_metadata.json").decode("utf-8"))
+        assert meta_data["app_name"] == "VoiceNotes"
+        assert "platform" in meta_data
+        assert "config" in meta_data
+        assert meta_data["audio"]["file_name"] == "jfk.flac"
+        assert meta_data["audio"]["duration_seconds"] == 11.0
+
+        # Check feedback notes
+        notes = zf.read("feedback_notes.txt").decode("utf-8")
+        assert "JFK inaugural address" in notes
+
+
 

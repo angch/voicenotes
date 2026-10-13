@@ -4,11 +4,20 @@ Application dialogs: Settings & Model Manager, Audio Recording, and About.
 
 from __future__ import annotations
 
+import json
 import os
+import platform
+import subprocess
+import sys
+import tempfile
+import urllib.parse
+import zipfile
+from datetime import datetime
 from pathlib import Path
 from typing import Optional
 
-from PyQt6.QtCore import QThread, QTimer, Qt, pyqtSignal
+from PyQt6.QtCore import QThread, QTimer, QUrl, Qt, pyqtSignal
+from PyQt6.QtGui import QDesktopServices
 from PyQt6.QtWidgets import (
     QCheckBox,
     QComboBox,
@@ -16,6 +25,7 @@ from PyQt6.QtWidgets import (
     QDialogButtonBox,
     QFileDialog,
     QFormLayout,
+    QFrame,
     QGroupBox,
     QHBoxLayout,
     QHeaderView,
@@ -26,10 +36,12 @@ from PyQt6.QtWidgets import (
     QSlider,
     QTableWidget,
     QTableWidgetItem,
+    QTextEdit,
     QVBoxLayout,
     QWidget,
 )
 
+from voicenotes import __version__
 from voicenotes.config import (
     AVAILABLE_WHISPER_MODELS,
     SUPPORTED_LANGUAGES,
@@ -38,6 +50,7 @@ from voicenotes.config import (
 )
 from voicenotes.engine.audio_utils import AudioRecorder, format_timestamp
 from voicenotes.engine.model_manager import ModelManager
+from voicenotes.export.exporters import export_to_json
 from voicenotes.gui.styles import get_effective_theme, get_stylesheet
 
 
@@ -344,3 +357,338 @@ class AboutDialog(QDialog):
         btn_box = QDialogButtonBox(QDialogButtonBox.StandardButton.Ok)
         btn_box.accepted.connect(self.accept)
         layout.addWidget(btn_box)
+
+
+class SendVoiceDialog(QDialog):
+    """
+    Dialog to package, export, or send audio recordings and transcripts
+    to developers for speech tuning, accent optimization, and diarization debugging.
+    """
+
+    def __init__(
+        self,
+        audio_path: Optional[str] = None,
+        transcript_text: str = "",
+        transcript_result: Optional[any] = None,
+        parent: Optional[QWidget] = None,
+    ):
+        super().__init__(parent)
+        self.setWindowTitle("Send Voice Sample for Tuning & Debugging")
+        self.setMinimumSize(540, 520)
+
+        self.audio_path = audio_path
+        self.transcript_text = transcript_text
+        self.transcript_result = transcript_result
+
+        eff_theme = get_effective_theme(config.get("theme", "system"))
+        self.setStyleSheet(get_stylesheet(eff_theme))
+
+        self._init_ui()
+
+    def _init_ui(self):
+        eff_theme = get_effective_theme(config.get("theme", "system"))
+        is_dark = eff_theme == "dark"
+
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(20, 18, 20, 18)
+        layout.setSpacing(12)
+
+        # Title & Subtitle
+        lbl_title = QLabel("Send Voice Sample for Tuning")
+        lbl_title.setStyleSheet(
+            f"font-size: 17px; font-weight: bold; color: {'#4dabf7' if is_dark else '#0067c0'};"
+        )
+        layout.addWidget(lbl_title)
+
+        lbl_desc = QLabel(
+            "Share an audio clip and transcript with developers to help improve speech recognition "
+            "accuracy, speaker separation, and vocabulary tuning for your recording setup."
+        )
+        lbl_desc.setWordWrap(True)
+        lbl_desc.setStyleSheet(f"color: {'#cccccc' if is_dark else '#444444'}; font-size: 12px;")
+        layout.addWidget(lbl_desc)
+
+        # Privacy notice
+        notice_box = QFrame()
+        notice_layout = QVBoxLayout(notice_box)
+        notice_layout.setContentsMargins(10, 8, 10, 8)
+        notice_bg = "#232b38" if is_dark else "#eef6ff"
+        notice_border = "#2f4562" if is_dark else "#b8d7ff"
+        notice_text_col = "#c8e1ff" if is_dark else "#0d47a1"
+        notice_box.setStyleSheet(
+            f"background-color: {notice_bg}; border: 1px solid {notice_border}; border-radius: 5px;"
+        )
+
+        lbl_notice = QLabel(
+            "<b>Privacy Notice:</b> VoiceNotes operates 100% offline. Files are only shared when you "
+            "explicitly export or attach them. Please do not submit recordings containing confidential personal information."
+        )
+        lbl_notice.setWordWrap(True)
+        lbl_notice.setStyleSheet(f"color: {notice_text_col}; font-size: 11px;")
+        notice_layout.addWidget(lbl_notice)
+        layout.addWidget(notice_box)
+
+        # Sample Summary Group
+        grp_summary = QGroupBox("Sample && Environment Details")
+        form = QFormLayout(grp_summary)
+        form.setSpacing(6)
+
+        audio_name = Path(self.audio_path).name if self.audio_path and os.path.exists(self.audio_path) else "No audio loaded"
+        audio_size_str = f" ({os.path.getsize(self.audio_path)/(1024*1024):.2f} MB)" if self.audio_path and os.path.exists(self.audio_path) else ""
+        form.addRow("Audio Source:", QLabel(f"{audio_name}{audio_size_str}"))
+
+        duration_val = getattr(self.transcript_result, "duration", None)
+        dur_str = f"{format_timestamp(duration_val)} ({duration_val:.1f}s)" if duration_val else "N/A"
+        form.addRow("Audio Duration:", QLabel(dur_str))
+
+        model_name = config.get("model", "small")
+        dev_name = config.get("device", "auto")
+        form.addRow("Whisper Model / Device:", QLabel(f"{model_name} / {dev_name}"))
+
+        spk_count = getattr(self.transcript_result, "num_speakers", 0)
+        diar_str = f"Enabled ({spk_count} detected)" if config.get("diarization_enabled", True) else "Disabled"
+        form.addRow("Speaker Diarization:", QLabel(diar_str))
+
+        layout.addWidget(grp_summary)
+
+        # Optional User Feedback / Notes
+        grp_notes = QGroupBox("Feedback / What Needs Tuning? (Optional)")
+        notes_layout = QVBoxLayout(grp_notes)
+        self.edit_notes = QTextEdit()
+        self.edit_notes.setPlaceholderText(
+            "Example: Misheard words around 0:14, speaker attribution inverted, background noise, regional accent, etc."
+        )
+        self.edit_notes.setMaximumHeight(70)
+        notes_layout.addWidget(self.edit_notes)
+        layout.addWidget(grp_notes)
+
+        # Delivery Action Buttons Group
+        grp_actions = QGroupBox("Delivery Options")
+        act_layout = QVBoxLayout(grp_actions)
+        act_layout.setSpacing(8)
+
+        # 1. Save ZIP bundle
+        btn_row1 = QHBoxLayout()
+        self.btn_save_zip = QPushButton("Save Debug Bundle (.zip)...")
+        self.btn_save_zip.setToolTip("Create a .zip archive containing the audio, transcript, and system metadata on your computer.")
+        self.btn_save_zip.clicked.connect(self._on_save_zip)
+        btn_row1.addWidget(self.btn_save_zip)
+        lbl_hint_zip = QLabel("Save package to folder of your choice")
+        lbl_hint_zip.setStyleSheet("color: #888; font-size: 11px;")
+        btn_row1.addWidget(lbl_hint_zip, stretch=1)
+        act_layout.addLayout(btn_row1)
+
+        # 2. Open GitHub Issue
+        btn_row2 = QHBoxLayout()
+        self.btn_github = QPushButton("Submit via GitHub Issue")
+        self.btn_github.setToolTip("Create bundle and open GitHub Issues in your browser to attach the sample.")
+        self.btn_github.clicked.connect(self._on_submit_github)
+        btn_row2.addWidget(self.btn_github)
+        lbl_hint_gh = QLabel("Opens https://github.com/angch/voicenotes/issues")
+        lbl_hint_gh.setStyleSheet("color: #888; font-size: 11px;")
+        btn_row2.addWidget(lbl_hint_gh, stretch=1)
+        act_layout.addLayout(btn_row2)
+
+        # 3. Send via Email
+        btn_row3 = QHBoxLayout()
+        self.btn_email = QPushButton("Send via Email")
+        self.btn_email.setToolTip("Create bundle and open your email client addressed to ang.chin.han@gmail.com.")
+        self.btn_email.clicked.connect(self._on_send_email)
+        btn_row3.addWidget(self.btn_email)
+        lbl_hint_email = QLabel("To: ang.chin.han@gmail.com")
+        lbl_hint_email.setStyleSheet("color: #888; font-size: 11px;")
+        btn_row3.addWidget(lbl_hint_email, stretch=1)
+        act_layout.addLayout(btn_row3)
+
+        layout.addWidget(grp_actions)
+
+        # Bottom Close button
+        btn_box = QDialogButtonBox(QDialogButtonBox.StandardButton.Close)
+        btn_box.rejected.connect(self.reject)
+        layout.addWidget(btn_box)
+
+    def _build_bundle(self, target_zip_path: Path) -> bool:
+        """Create a zip archive containing audio, transcript, metadata, and user notes."""
+        try:
+            target_zip_path.parent.mkdir(parents=True, exist_ok=True)
+            with zipfile.ZipFile(target_zip_path, "w", zipfile.ZIP_DEFLATED) as zf:
+                # 1. User feedback notes
+                notes = self.edit_notes.toPlainText().strip()
+                if notes:
+                    zf.writestr("feedback_notes.txt", notes)
+
+                # 2. Transcript plain text
+                text = self.transcript_text.strip()
+                if text:
+                    zf.writestr("transcript.txt", text)
+
+                # 3. Structured result JSON if present
+                if self.transcript_result:
+                    try:
+                        if hasattr(self.transcript_result, "to_dict"):
+                            zf.writestr(
+                                "transcript.json",
+                                json.dumps(self.transcript_result.to_dict(), indent=2),
+                            )
+                        else:
+                            zf.writestr(
+                                "transcript.json",
+                                export_to_json(self.transcript_result),
+                            )
+                    except Exception:
+                        pass
+
+                # 4. Metadata and environment diagnostics
+                meta = {
+                    "app_name": "VoiceNotes",
+                    "app_version": __version__,
+                    "created_at": datetime.now().isoformat(),
+                    "platform": {
+                        "os": platform.system(),
+                        "release": platform.release(),
+                        "version": platform.version(),
+                        "architecture": platform.machine(),
+                        "processor": platform.processor(),
+                        "python_version": platform.python_version(),
+                    },
+                    "config": {
+                        "model": config.get("model", "small"),
+                        "device": config.get("device", "auto"),
+                        "language": config.get("language", "auto"),
+                        "diarization_enabled": config.get("diarization_enabled", True),
+                    },
+                    "audio": {
+                        "file_name": Path(self.audio_path).name if self.audio_path else None,
+                        "file_size": os.path.getsize(self.audio_path)
+                        if self.audio_path and os.path.exists(self.audio_path)
+                        else None,
+                        "duration": getattr(self.transcript_result, "duration", None),
+                        "duration_seconds": getattr(self.transcript_result, "duration", None),
+                        "num_speakers": getattr(self.transcript_result, "num_speakers", None),
+                    },
+                    "notes": notes,
+                }
+                zf.writestr("debug_metadata.json", json.dumps(meta, indent=2))
+
+                # 5. Audio file if present
+                if self.audio_path and os.path.exists(self.audio_path):
+                    p = Path(self.audio_path)
+                    zf.write(self.audio_path, arcname=f"audio{p.suffix}")
+
+            return True
+        except Exception as e:
+            QMessageBox.critical(self, "Packaging Error", f"Failed to create debug bundle:\n{e}")
+            return False
+
+    def _reveal_file(self, file_path: Path):
+        """Open the enclosing folder and highlight the created zip file."""
+        try:
+            if sys.platform == "win32":
+                subprocess.Popen(["explorer", f"/select,{os.path.abspath(file_path)}"])
+            else:
+                QDesktopServices.openUrl(QUrl.fromLocalFile(str(file_path.parent.resolve())))
+        except Exception:
+            pass
+
+    def _on_save_zip(self):
+        default_name = f"voicenotes_tuning_{datetime.now().strftime('%Y%m%d_%H%M%S')}.zip"
+        last_dir = config.get("last_open_folder", str(Path.home()))
+        dest_path, _ = QFileDialog.getSaveFileName(
+            self,
+            "Save VoiceNotes Tuning Bundle",
+            str(Path(last_dir) / default_name),
+            "ZIP Archives (*.zip);;All Files (*.*)",
+        )
+        if not dest_path:
+            return
+
+        p = Path(dest_path)
+        if self._build_bundle(p):
+            self._reveal_file(p)
+            QMessageBox.information(
+                self,
+                "Bundle Saved",
+                f"Tuning bundle saved successfully to:\n{p}\n\nThe folder has been opened in File Explorer.",
+            )
+
+    def _on_submit_github(self):
+        downloads_dir = Path.home() / "Downloads"
+        target_dir = downloads_dir if downloads_dir.exists() else Path(tempfile.gettempdir())
+        default_name = f"voicenotes_tuning_{datetime.now().strftime('%Y%m%d_%H%M%S')}.zip"
+        zip_path = target_dir / default_name
+
+        if not self._build_bundle(zip_path):
+            return
+
+        self._reveal_file(zip_path)
+
+        audio_name = Path(self.audio_path).name if self.audio_path else "Recorded Audio"
+        model_name = config.get("model", "small")
+        dev_name = config.get("device", "auto")
+        notes = self.edit_notes.toPlainText().strip()
+
+        issue_title = f"[Tuning Sample] {audio_name} ({model_name})"
+        issue_body = f"""### Voice Sample for Model Tuning & Accuracy
+
+**Recording & Settings**:
+- Audio File: `{audio_name}`
+- Model: `{model_name}` | Device: `{dev_name}`
+- OS: `{platform.system()} {platform.release()} ({platform.machine()})`
+- VoiceNotes Version: `{__version__}`
+
+**User Notes & Feedback**:
+{notes if notes else "(No additional notes provided)"}
+
+---
+*(Please drag-and-drop the generated `{zip_path.name}` file into this issue box to attach it!)*
+"""
+        params = urllib.parse.urlencode({"title": issue_title, "body": issue_body})
+        issue_url = f"https://github.com/angch/voicenotes/issues/new?{params}"
+
+        QDesktopServices.openUrl(QUrl(issue_url))
+        QMessageBox.information(
+            self,
+            "GitHub Issue Opened",
+            f"Bundle created:\n{zip_path}\n\nA new GitHub Issue page has been opened in your browser.\n"
+            f"Please drag-and-drop the highlighted ZIP file into the GitHub issue box to attach it.",
+        )
+
+    def _on_send_email(self):
+        downloads_dir = Path.home() / "Downloads"
+        target_dir = downloads_dir if downloads_dir.exists() else Path(tempfile.gettempdir())
+        default_name = f"voicenotes_tuning_{datetime.now().strftime('%Y%m%d_%H%M%S')}.zip"
+        zip_path = target_dir / default_name
+
+        if not self._build_bundle(zip_path):
+            return
+
+        self._reveal_file(zip_path)
+
+        audio_name = Path(self.audio_path).name if self.audio_path else "Audio Sample"
+        model_name = config.get("model", "small")
+        notes = self.edit_notes.toPlainText().strip()
+
+        email_to = "ang.chin.han@gmail.com"
+        subject = f"VoiceNotes Tuning Sample: {audio_name}"
+        body = f"""Hi Ang Chin Han,
+
+Here is an audio and transcription sample for VoiceNotes model tuning:
+
+- Audio: {audio_name}
+- Model: {model_name}
+- OS: {platform.system()} {platform.release()} ({platform.machine()})
+- VoiceNotes: {__version__}
+
+User Feedback:
+{notes if notes else "(None)"}
+
+I have attached the zip file ({zip_path.name}).
+"""
+        mailto_url = f"mailto:{email_to}?subject={urllib.parse.quote(subject)}&body={urllib.parse.quote(body)}"
+        QDesktopServices.openUrl(QUrl(mailto_url))
+        QMessageBox.information(
+            self,
+            "Email Client Opened",
+            f"Bundle created:\n{zip_path}\n\nYour default email client has been opened.\n"
+            f"Please attach the highlighted ZIP file ({zip_path.name}) to the email.",
+        )

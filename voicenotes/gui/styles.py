@@ -282,6 +282,34 @@ QScrollArea > QWidget > QWidget {
     border-color: #0067c0;
     font-weight: 600;
 }
+#editorActionBar {
+    background-color: #f7f9fa;
+    border-bottom: 1px solid #e0e0e0;
+    padding: 3px 8px;
+}
+#editorActionBar QPushButton {
+    padding: 4px 10px;
+    font-size: 12px;
+    font-weight: 500;
+    color: #1a1a1a;
+    background-color: #ffffff;
+    border: 1px solid #d0d0d0;
+    border-radius: 4px;
+}
+#editorActionBar QPushButton:hover {
+    background-color: #f0f0f0;
+    border-color: #b0b0b0;
+}
+#editorActionBar QPushButton#btnSendVoice {
+    color: #0067c0;
+    background-color: #f0f7ff;
+    border: 1px solid #b8d7ff;
+    font-weight: 600;
+}
+#editorActionBar QPushButton#btnSendVoice:hover {
+    background-color: #e1effe;
+    border-color: #0067c0;
+}
 """
 
 DARK_THEME = """
@@ -556,6 +584,34 @@ QScrollArea > QWidget > QWidget {
     color: #4dabf7;
     border-color: #0078d4;
     font-weight: 600;
+}
+#editorActionBar {
+    background-color: #252525;
+    border-bottom: 1px solid #333333;
+    padding: 3px 8px;
+}
+#editorActionBar QPushButton {
+    padding: 4px 10px;
+    font-size: 12px;
+    font-weight: 500;
+    color: #e0e0e0;
+    background-color: #2d2d2d;
+    border: 1px solid #3d3d3d;
+    border-radius: 4px;
+}
+#editorActionBar QPushButton:hover {
+    background-color: #383838;
+    border-color: #505050;
+}
+#editorActionBar QPushButton#btnSendVoice {
+    color: #63b3ed;
+    background-color: #162438;
+    border: 1px solid #2b4c7e;
+    font-weight: 600;
+}
+#editorActionBar QPushButton#btnSendVoice:hover {
+    background-color: #1c3352;
+    border-color: #3182ce;
 }
 """
 

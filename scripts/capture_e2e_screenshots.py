@@ -15,7 +15,7 @@ from PyQt6.QtWidgets import QApplication
 
 from voicenotes.config import config
 from voicenotes.engine.transcriber import TranscriptionResult, TranscriptionSegment
-from voicenotes.gui.dialogs import AboutDialog, SettingsDialog
+from voicenotes.gui.dialogs import AboutDialog, SendVoiceDialog, SettingsDialog
 from voicenotes.gui.main_window import MainWindow
 from voicenotes.gui.styles import create_palette, get_stylesheet
 
@@ -182,6 +182,34 @@ def main():
     about_dlg.resize(460, 360)
     capture_widget(about_dlg, output_dir / "10_about_dialog_dark.png")
     about_dlg.close()
+
+    # 11. Send Voice Dialog - Light Mode
+    config.set("theme", "light")
+    app.setPalette(create_palette("light"))
+    app.setStyleSheet(get_stylesheet("light"))
+    send_dlg = SendVoiceDialog(
+        audio_path=str(sample_wav) if sample_wav.exists() else None,
+        transcript_text=sample_result.plain_text,
+        transcript_result=sample_result,
+    )
+    send_dlg.edit_notes.setPlainText("Transcription test clip with 2 speakers. Some background noise near 0:04.")
+    send_dlg.resize(560, 530)
+    capture_widget(send_dlg, output_dir / "11_send_voice_dialog_light.png")
+    send_dlg.close()
+
+    # 12. Send Voice Dialog - Dark Mode
+    config.set("theme", "dark")
+    app.setPalette(create_palette("dark"))
+    app.setStyleSheet(get_stylesheet("dark"))
+    send_dlg_dark = SendVoiceDialog(
+        audio_path=str(sample_wav) if sample_wav.exists() else None,
+        transcript_text=sample_result.plain_text,
+        transcript_result=sample_result,
+    )
+    send_dlg_dark.edit_notes.setPlainText("Transcription test clip with 2 speakers. Some background noise near 0:04.")
+    send_dlg_dark.resize(560, 530)
+    capture_widget(send_dlg_dark, output_dir / "12_send_voice_dialog_dark.png")
+    send_dlg_dark.close()
 
     print("\nAll screenshots generated successfully in screenshots/")
 
