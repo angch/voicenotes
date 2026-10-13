@@ -35,20 +35,23 @@ jobs:
         with:
           version: "latest"
 
-      - name: Set up Inno Setup
-        uses: crazy-max/ghaction-innosetup@v3
+      - name: Install Inno Setup
+        shell: pwsh
+        run: |
+          choco install innosetup -y
+          "C:\Program Files (x86)\Inno Setup 6" | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
 
       - name: Install Dependencies
         run: |
-          uv sync
+          uv sync --all-groups
 
       - name: Run Test Suite
         run: |
-          uv run python -m pytest
+          uv run -- python -m pytest
 
       - name: Build Standalone Executable
         run: |
-          uv run python build_executable.py
+          uv run -- python build_executable.py
 
       - name: Determine Version
         id: version_info
@@ -59,26 +62,44 @@ jobs:
             $ver = "${{ github.event.inputs.tag_name }}"
             if (-not $ver) { $ver = "v0.1.0" }
           }
-          Write-Host "Resolved release version: $ver"
-          "version=$ver" >> $env:GITHUB_OUTPUT
+          $cleanVer = $ver.TrimStart('v')
+          Write-Host "Resolved release tag: $ver (clean version: $cleanVer)"
+          "tag=$ver" >> $env:GITHUB_OUTPUT
+          "clean_version=$cleanVer" >> $env:GITHUB_OUTPUT
 
       - name: Compile Windows Installer
+        shell: pwsh
         run: |
-          iscc VoiceNotes.iss /DMyAppVersion=${{ steps.version_info.outputs.version }}
+          $iscc = "C:\Program Files (x86)\Inno Setup 6\iscc.exe"
+          if (-not (Test-Path $iscc)) {
+            $cmd = Get-Command iscc.exe -ErrorAction SilentlyContinue
+            if ($cmd) { $iscc = $cmd.Source }
+          }
+          Write-Host "Compiling installer using ISCC: $iscc"
+          & $iscc VoiceNotes.iss /DMyAppVersion=${{ steps.version_info.outputs.clean_version }}
 
       - name: Create Portable Zip Package
         shell: pwsh
         run: |
           New-Item -ItemType Directory -Force -Path dist-installer | Out-Null
-          $zipPath = "dist-installer\VoiceNotes-${{ steps.version_info.outputs.version }}-windows-x64-portable.zip"
+          $zipPath = "dist-installer\VoiceNotes-${{ steps.version_info.outputs.tag }}-windows-x64-portable.zip"
           Compress-Archive -Path dist\VoiceNotes\* -DestinationPath $zipPath -Force
           Get-ChildItem dist-installer
+
+      - name: Upload Installer Artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: VoiceNotes-${{ steps.version_info.outputs.tag }}-windows-x64
+          path: |
+            dist-installer/VoiceNotes-Setup-*.exe
+            dist-installer/VoiceNotes-*-portable.zip
+          if-no-files-found: error
 
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: ${{ steps.version_info.outputs.version }}
-          name: VoiceNotes ${{ steps.version_info.outputs.version }}
+          tag_name: ${{ steps.version_info.outputs.tag }}
+          name: VoiceNotes ${{ steps.version_info.outputs.tag }}
           files: |
             dist-installer/VoiceNotes-Setup-*.exe
             dist-installer/VoiceNotes-*-portable.zip
