@@ -39,6 +39,8 @@ def test_audio_loader_and_metadata():
 
 
 def test_model_manager_status():
+    if not ModelManager.is_diarization_model_available():
+        ModelManager.download_diarization_model()
     status = ModelManager.get_models_status()
     assert "tiny" in status
     assert "base" in status

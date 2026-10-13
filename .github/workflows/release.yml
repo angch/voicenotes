@@ -45,9 +45,19 @@ jobs:
         run: |
           uv sync --all-groups
 
+      - name: Start Windows Audio Service
+        shell: pwsh
+        run: |
+          Set-Service -Name Audiosrv -StartupType Automatic -ErrorAction SilentlyContinue
+          Start-Service -Name Audiosrv -ErrorAction SilentlyContinue
+
+      - name: Pre-download Models for Tests & Packaging
+        run: |
+          uv run -- python -c "from voicenotes.engine.model_manager import ModelManager; ModelManager.download_diarization_model(); ModelManager.download_whisper_model('tiny')"
+
       - name: Run Test Suite
         run: |
-          uv run -- python -m pytest
+          uv run -- python -m pytest -v --tb=short
 
       - name: Build Standalone Executable
         run: |

@@ -62,7 +62,10 @@ def test_player_controls(app_window, qtbot):
     jfk_sample = Path("samples/jfk.flac").resolve()
     win.load_audio_file(str(jfk_sample))
 
-    from PyQt6.QtMultimedia import QMediaPlayer
+    from PyQt6.QtMultimedia import QMediaDevices, QMediaPlayer
+
+    if not QMediaDevices.audioOutputs():
+        pytest.skip("Skipping audio playback test: No audio output hardware available on CI runner")
 
     qtbot.waitUntil(
         lambda: win.player_widget.player.mediaStatus()
@@ -105,7 +108,10 @@ def test_clickable_timestamp_anchor(app_window, qtbot):
     jfk_sample = Path("samples/jfk.flac").resolve()
     win.load_audio_file(str(jfk_sample))
 
-    from PyQt6.QtMultimedia import QMediaPlayer
+    from PyQt6.QtMultimedia import QMediaDevices, QMediaPlayer
+
+    if not QMediaDevices.audioOutputs():
+        pytest.skip("Skipping audio playback test: No audio output hardware available on CI runner")
 
     qtbot.waitUntil(
         lambda: win.player_widget.player.mediaStatus()
