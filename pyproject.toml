@@ -1,6 +1,6 @@
 [project]
 name = "voicenotes"
-version = "0.5.1"
+version = "0.5.2"
 description = "Multiplatform offline speech transcriber with speaker diarization - Notepad Lite"
 readme = "README.md"
 requires-python = ">=3.10"

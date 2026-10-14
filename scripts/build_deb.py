@@ -26,7 +26,7 @@ DIST_DIR = ROOT_DIR / "dist"
 BUILD_DIR = ROOT_DIR / "build" / "deb"
 
 APP_NAME = "voicenotes"
-PACKAGE_VERSION = "0.5.1"
+PACKAGE_VERSION = "0.5.2"
 
 
 def get_version() -> str:
@@ -415,7 +415,7 @@ def build_all_in_one_deb(version: str, output_name: Optional[str] = None, compre
             "and CAM++) and supports CPU, NVIDIA CUDA, and AMD ROCm acceleration out of the box\n"
             "on both X11 and Wayland."
         ),
-        depends="libportaudio2, libxcb-cursor0, libasound2t64 | libasound2",
+        depends="libportaudio2, libxcb-cursor0, libasound2t64 | libasound2, libpulse0",
         recommends="nvidia-driver-535 | nvidia-driver-550 | rocm-hip-runtime",
         suggests="pipewire-audio | pulseaudio",
     )
@@ -466,7 +466,7 @@ def build_split_debs(version: str, compression: str = "gzip") -> tuple[Path, Pat
             "Install 'voicenotes-models-accel' for pre-bundled offline models and\n"
             "enhanced GPU acceleration (NVIDIA CUDA & AMD ROCm)."
         ),
-        depends="libportaudio2, libxcb-cursor0, libasound2t64 | libasound2",
+        depends="libportaudio2, libxcb-cursor0, libasound2t64 | libasound2, libpulse0",
         recommends="voicenotes-models-accel",
         suggests="nvidia-driver-535 | nvidia-driver-550 | rocm-hip-runtime",
     )

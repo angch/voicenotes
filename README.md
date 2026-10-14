@@ -169,13 +169,13 @@ uv run python scripts/build_deb.py --mode all-in-one
 ```
 Install on any Ubuntu/Debian machine:
 ```bash
-sudo dpkg -i dist/voicenotes_0.5.1_all-in-one_amd64.deb
+sudo dpkg -i dist/voicenotes_0.5.2_all-in-one_amd64.deb
 ```
 
 #### Strategy 2: Two Split Packages (Alternative for modular updates)
 Separates the application/Python code from the larger neural network models and acceleration files:
-- **Package 1 (`voicenotes_0.5.1_amd64.deb` / `voicenotes-app_...deb`)**: Contains the application binary, GUI/CLI, desktop entry, icons, and audio samples (~370 MB).
-- **Package 2 (`voicenotes-models-accel_0.5.1_amd64.deb`)**: Contains the offline Whisper speech models, CAM++ ONNX speaker diarization models, and GPU acceleration configurations (~220 MB).
+- **Package 1 (`voicenotes_0.5.2_amd64.deb` / `voicenotes-app_...deb`)**: Contains the application binary, GUI/CLI, desktop entry, icons, and audio samples (~370 MB).
+- **Package 2 (`voicenotes-models-accel_0.5.2_amd64.deb`)**: Contains the offline Whisper speech models, CAM++ ONNX speaker diarization models, and GPU acceleration configurations (~220 MB).
 
 Build both split packages:
 ```bash
@@ -183,7 +183,7 @@ uv run python scripts/build_deb.py --mode split
 ```
 Install both together:
 ```bash
-sudo dpkg -i dist/voicenotes_0.5.1_amd64.deb dist/voicenotes-models-accel_0.5.1_amd64.deb
+sudo dpkg -i dist/voicenotes_0.5.2_amd64.deb dist/voicenotes-models-accel_0.5.2_amd64.deb
 ```
 
 #### Strategy 3: Generate All Packages at Once

@@ -7,9 +7,9 @@ on:
   workflow_dispatch:
     inputs:
       tag_name:
-        description: 'Release tag name (e.g. v0.5.1)'
+        description: 'Release tag name (e.g. v0.5.2)'
         required: false
-        default: 'v0.5.1'
+        default: 'v0.5.2'
 
 permissions:
   contents: write
@@ -70,7 +70,7 @@ jobs:
           $ver = "${{ github.ref_name }}"
           if (-not $ver -or $ver.StartsWith("refs/") -or $ver -eq "main") {
             $ver = "${{ github.event.inputs.tag_name }}"
-            if (-not $ver) { $ver = "v0.5.1" }
+            if (-not $ver) { $ver = "v0.5.2" }
           }
           $cleanVer = $ver.TrimStart('v')
           Write-Host "Resolved release tag: $ver (clean version: $cleanVer)"
@@ -147,7 +147,7 @@ jobs:
           ver="${{ github.ref_name }}"
           if [ -z "$ver" ] || [[ "$ver" == refs/* ]] || [ "$ver" = "main" ]; then
             ver="${{ github.event.inputs.tag_name }}"
-            if [ -z "$ver" ]; then ver="v0.5.1"; fi
+            if [ -z "$ver" ]; then ver="v0.5.2"; fi
           fi
           cleanVer="${ver#v}"
           echo "tag=$ver" >> $GITHUB_OUTPUT
@@ -191,7 +191,7 @@ jobs:
       - name: Install System Dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y xvfb libegl1 libgl1 libportaudio2 libxcb-cursor0 dpkg-dev
+          sudo apt-get install -y xvfb libegl1 libgl1 libportaudio2 libxcb-cursor0 libpulse0 dpkg-dev
 
       - name: Install Dependencies
         run: |
@@ -211,7 +211,7 @@ jobs:
           ver="${{ github.ref_name }}"
           if [ -z "$ver" ] || [[ "$ver" == refs/* ]] || [ "$ver" = "main" ]; then
             ver="${{ github.event.inputs.tag_name }}"
-            if [ -z "$ver" ]; then ver="v0.5.1"; fi
+            if [ -z "$ver" ]; then ver="v0.5.2"; fi
           fi
           cleanVer="${ver#v}"
           echo "tag=$ver" >> $GITHUB_OUTPUT
@@ -256,7 +256,7 @@ jobs:
           ver="${{ github.ref_name }}"
           if [ -z "$ver" ] || [[ "$ver" == refs/* ]] || [ "$ver" = "main" ]; then
             ver="${{ github.event.inputs.tag_name }}"
-            if [ -z "$ver" ]; then ver="v0.5.1"; fi
+            if [ -z "$ver" ]; then ver="v0.5.2"; fi
           fi
           echo "tag=$ver" >> $GITHUB_OUTPUT
 

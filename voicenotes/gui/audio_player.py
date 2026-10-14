@@ -9,7 +9,15 @@ from pathlib import Path
 from typing import Optional
 
 from PyQt6.QtCore import QTime, QUrl, pyqtSignal, pyqtSlot
-from PyQt6.QtMultimedia import QAudioOutput, QMediaPlayer
+
+try:
+    from PyQt6.QtMultimedia import QAudioOutput, QMediaPlayer
+    _HAS_QT_MULTIMEDIA = True
+except (ImportError, OSError):
+    QAudioOutput = None
+    QMediaPlayer = None
+    _HAS_QT_MULTIMEDIA = False
+
 from PyQt6.QtWidgets import (
     QComboBox,
     QHBoxLayout,
@@ -41,12 +49,16 @@ class AudioPlayerWidget(QWidget):
         self._init_ui()
 
     def _setup_player(self) -> None:
+        self._pending_seek_ms: Optional[int] = None
+        if not _HAS_QT_MULTIMEDIA or QMediaPlayer is None or QAudioOutput is None:
+            self.player = None
+            self.audio_output = None
+            return
+
         self.player = QMediaPlayer(self)
         self.audio_output = QAudioOutput(self)
         self.player.setAudioOutput(self.audio_output)
         self.audio_output.setVolume(1.0)
-
-        self._pending_seek_ms: Optional[int] = None
 
         self.player.positionChanged.connect(self._on_position_changed)
         self.player.durationChanged.connect(self._on_duration_changed)
@@ -114,6 +126,8 @@ class AudioPlayerWidget(QWidget):
         """Load an audio file into the player."""
         self._current_file = file_path
         self._pending_seek_ms = None
+        if not self.player:
+            return
         url = QUrl.fromLocalFile(file_path)
         self.player.setSource(url)
         self.btn_play_pause.setEnabled(True)
@@ -123,13 +137,16 @@ class AudioPlayerWidget(QWidget):
         self.btn_play_pause.setText("▶ Play")
 
     def play(self) -> None:
-        if self._current_file:
+        if self._current_file and self.player:
             self.player.play()
 
     def pause(self) -> None:
-        self.player.pause()
+        if self.player:
+            self.player.pause()
 
     def toggle_play_pause(self) -> None:
+        if not self.player:
+            return
         if self.player.playbackState() == QMediaPlayer.PlaybackState.PlayingState:
             self.pause()
         else:
@@ -137,7 +154,7 @@ class AudioPlayerWidget(QWidget):
 
     def seek_to(self, seconds: float, auto_play: bool = True) -> None:
         """Jump to a specific second in the audio."""
-        if not self._current_file:
+        if not self._current_file or not self.player:
             return
         target_ms = max(0, int(seconds * 1000))
         if self.player.mediaStatus() in (
@@ -152,6 +169,8 @@ class AudioPlayerWidget(QWidget):
             self.play()
 
     def _on_media_status_changed(self, status: QMediaPlayer.MediaStatus) -> None:
+        if not self.player:
+            return
         if status in (QMediaPlayer.MediaStatus.LoadedMedia, QMediaPlayer.MediaStatus.BufferedMedia):
             if self._pending_seek_ms is not None:
                 self.player.setPosition(self._pending_seek_ms)
@@ -159,10 +178,14 @@ class AudioPlayerWidget(QWidget):
 
     def seek_relative(self, delta_seconds: float) -> None:
         """Jump relative to current position."""
+        if not self.player:
+            return
         curr_sec = self.player.position() / 1000.0
         self.seek_to(curr_sec + delta_seconds, auto_play=False)
 
     def _on_speed_changed(self, text: str) -> None:
+        if not self.player:
+            return
         try:
             rate = float(text.replace("x", ""))
             self.player.setPlaybackRate(rate)
@@ -201,7 +224,7 @@ class AudioPlayerWidget(QWidget):
             self.lbl_time.setText(f"{format_timestamp(curr_sec)} / {format_timestamp(total_sec)}")
 
     def _on_slider_released(self) -> None:
-        if self._duration_ms > 0:
+        if self._duration_ms > 0 and self.player:
             pos_ms = int((self.slider.value() / 1000.0) * self._duration_ms)
             self.player.setPosition(pos_ms)
         self._is_seeking = False

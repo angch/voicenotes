@@ -5,6 +5,16 @@ All notable changes to VoiceNotes are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.5.2] - 2026-10-14
+
+### Fixed
+- **PyQt6.QtMultimedia Linux Dependency & Graceful Fallback**:
+  - Added `libpulse0` to GitHub Actions system dependencies in `.github/workflows/release.yml`, resolving headless test runner `ImportError: libpulse.so.0: cannot open shared object file`.
+  - Added `libpulse0` to Debian package runtime dependencies (`Depends: ...`) in `scripts/build_deb.py`.
+  - Added graceful fallback in `voicenotes/gui/audio_player.py` so GUI modules can be imported and run safely even on minimal headless environments where PulseAudio/QtMultimedia is unavailable.
+
+---
+
 ## [0.5.1] - 2026-10-14
 
 ### Added
