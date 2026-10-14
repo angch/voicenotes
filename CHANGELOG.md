@@ -5,6 +5,15 @@ All notable changes to VoiceNotes are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.5.1] - 2026-10-14
+
+### Added
+- **Automated GitHub Actions Debian Packaging & Release**:
+  - Implemented `build-linux` job in `.github/workflows/release.yml`.
+  - Runs headless GUI and unit test suite with `xvfb-run` on Ubuntu.
+  - Automatically builds standalone Linux executables, all-in-one `.deb` package (`voicenotes_*_all-in-one_amd64.deb`), and split dual `.deb` packages (`voicenotes_*_amd64.deb` and `voicenotes-models-accel_*_amd64.deb`).
+  - Automatically packages and uploads all Linux `.deb` installers and portable `.tar.gz` bundles to GitHub Releases alongside Windows and macOS installers.
+
 ---
 
 ## [0.5.0] - 2026-10-14

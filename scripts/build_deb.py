@@ -26,7 +26,7 @@ DIST_DIR = ROOT_DIR / "dist"
 BUILD_DIR = ROOT_DIR / "build" / "deb"
 
 APP_NAME = "voicenotes"
-PACKAGE_VERSION = "0.5.0"
+PACKAGE_VERSION = "0.5.1"
 
 
 def get_version() -> str:

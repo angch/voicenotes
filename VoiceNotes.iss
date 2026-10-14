@@ -2,7 +2,7 @@
 ; Builds a modern Windows Setup wizard for VoiceNotes
 
 #ifndef MyAppVersion
-#define MyAppVersion "0.5.0"
+#define MyAppVersion "0.5.1"
 #endif
 
 #define MyAppName "VoiceNotes"

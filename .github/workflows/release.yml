@@ -7,9 +7,9 @@ on:
   workflow_dispatch:
     inputs:
       tag_name:
-        description: 'Release tag name (e.g. v0.1.0)'
+        description: 'Release tag name (e.g. v0.5.1)'
         required: false
-        default: 'v0.1.0'
+        default: 'v0.5.1'
 
 permissions:
   contents: write
@@ -70,7 +70,7 @@ jobs:
           $ver = "${{ github.ref_name }}"
           if (-not $ver -or $ver.StartsWith("refs/") -or $ver -eq "main") {
             $ver = "${{ github.event.inputs.tag_name }}"
-            if (-not $ver) { $ver = "v0.1.0" }
+            if (-not $ver) { $ver = "v0.5.1" }
           }
           $cleanVer = $ver.TrimStart('v')
           Write-Host "Resolved release tag: $ver (clean version: $cleanVer)"
@@ -147,7 +147,7 @@ jobs:
           ver="${{ github.ref_name }}"
           if [ -z "$ver" ] || [[ "$ver" == refs/* ]] || [ "$ver" = "main" ]; then
             ver="${{ github.event.inputs.tag_name }}"
-            if [ -z "$ver" ]; then ver="v0.1.0"; fi
+            if [ -z "$ver" ]; then ver="v0.5.1"; fi
           fi
           cleanVer="${ver#v}"
           echo "tag=$ver" >> $GITHUB_OUTPUT
@@ -168,9 +168,82 @@ jobs:
             dist-installer/VoiceNotes-*-macos-app.zip
           if-no-files-found: error
 
+  build-linux:
+    name: Build Linux Application & Debian (.deb) Packages
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+        with:
+          version: "latest"
+
+      - name: Install System Dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y xvfb libegl1 libgl1 libportaudio2 libxcb-cursor0 dpkg-dev
+
+      - name: Install Dependencies
+        run: |
+          uv sync --all-groups
+
+      - name: Pre-download Offline Models for Packaging
+        run: |
+          uv run -- python build_executable.py --models tiny,base,diarization --skip-pyinstaller
+
+      - name: Run Test Suite (Headless Display)
+        run: |
+          xvfb-run -a uv run -- python -m pytest -v --tb=short
+
+      - name: Determine Version
+        id: version_info
+        run: |
+          ver="${{ github.ref_name }}"
+          if [ -z "$ver" ] || [[ "$ver" == refs/* ]] || [ "$ver" = "main" ]; then
+            ver="${{ github.event.inputs.tag_name }}"
+            if [ -z "$ver" ]; then ver="v0.5.1"; fi
+          fi
+          cleanVer="${ver#v}"
+          echo "tag=$ver" >> $GITHUB_OUTPUT
+          echo "clean_version=$cleanVer" >> $GITHUB_OUTPUT
+
+      - name: Build Standalone Executable
+        run: |
+          uv run -- python build_executable.py --models tiny,base,diarization
+
+      - name: Generate Debian Packages (.deb)
+        run: |
+          uv run -- python scripts/build_deb.py --mode both --version ${{ steps.version_info.outputs.clean_version }}
+
+      - name: Package Linux Artifacts
+        run: |
+          mkdir -p dist-installer
+          cp dist/*.deb dist-installer/
+          tar -czf "dist-installer/VoiceNotes-${{ steps.version_info.outputs.tag }}-linux-x64-portable.tar.gz" -C dist VoiceNotes
+          ls -la dist-installer/
+
+      - name: Upload Linux Artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: linux-artifacts
+          path: |
+            dist-installer/*.deb
+            dist-installer/VoiceNotes-*-linux-x64-portable.tar.gz
+          if-no-files-found: error
+
   publish-release:
     name: Publish Multiplatform Release
-    needs: [build-windows, build-macos]
+    needs: [build-windows, build-macos, build-linux]
     runs-on: ubuntu-latest
 
     steps:
@@ -183,7 +256,7 @@ jobs:
           ver="${{ github.ref_name }}"
           if [ -z "$ver" ] || [[ "$ver" == refs/* ]] || [ "$ver" = "main" ]; then
             ver="${{ github.event.inputs.tag_name }}"
-            if [ -z "$ver" ]; then ver="v0.1.0"; fi
+            if [ -z "$ver" ]; then ver="v0.5.1"; fi
           fi
           echo "tag=$ver" >> $GITHUB_OUTPUT
 
@@ -199,12 +272,20 @@ jobs:
           name: macos-artifacts
           path: release-assets
 
+      - name: Download Linux Artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: linux-artifacts
+          path: release-assets
+
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ steps.version_info.outputs.tag }}
           name: VoiceNotes ${{ steps.version_info.outputs.tag }}
-          files: release-assets/*
+          files: |
+            release-assets/*
+            release-assets/**/*
           draft: false
           prerelease: false
           generate_release_notes: true
