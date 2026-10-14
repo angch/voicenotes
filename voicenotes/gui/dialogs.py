@@ -30,6 +30,7 @@ from PyQt6.QtWidgets import (
     QHBoxLayout,
     QHeaderView,
     QLabel,
+    QLineEdit,
     QMessageBox,
     QProgressBar,
     QPushButton,
@@ -728,3 +729,104 @@ I have attached the zip file ({zip_path.name}).
             f"Bundle created:\n{zip_path}\n\nYour default email client has been opened.\n"
             f"Please attach the highlighted ZIP file ({zip_path.name}) to the email.",
         )
+
+
+class SetPreferredSpellingDialog(QDialog):
+    """
+    Dialog to create or edit a voice -> preferred text replacement rule.
+    Allows users to correct misheard words, phonetic transcriptions, and names.
+    """
+
+    def __init__(
+        self,
+        original: str = "",
+        replacement: str = "",
+        case_sensitive: bool = False,
+        parent: Optional[QWidget] = None,
+    ):
+        super().__init__(parent)
+        self.setWindowTitle("Set Preferred Spelling")
+        self.setFixedWidth(460)
+
+        eff_theme = get_effective_theme(config.get("theme", "system"))
+        self.setStyleSheet(get_stylesheet(eff_theme))
+        is_dark = eff_theme == "dark"
+
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(20, 20, 20, 20)
+        layout.setSpacing(14)
+
+        # Title & Description
+        lbl_title = QLabel("🔤 Preferred Spelling & Vocabulary")
+        lbl_title.setStyleSheet(
+            f"font-size: 16px; font-weight: bold; color: {'#4dabf7' if is_dark else '#0067c0'};"
+        )
+        layout.addWidget(lbl_title)
+
+        lbl_desc = QLabel(
+            "Supply your preferred spelling for a misheard word or name. "
+            "This rule will immediately update all past transcription and apply to live dictation."
+        )
+        lbl_desc.setWordWrap(True)
+        lbl_desc.setStyleSheet(f"color: {'#a0aec0' if is_dark else '#666666'}; font-size: 12px;")
+        layout.addWidget(lbl_desc)
+
+        form_layout = QFormLayout()
+        form_layout.setSpacing(10)
+        form_layout.setLabelAlignment(Qt.AlignmentFlag.AlignLeft)
+
+        self.edit_original = QLineEdit(original.strip())
+        self.edit_original.setPlaceholderText("e.g. Hicham, King Fad, Air Asia")
+        form_layout.addRow("Voice / Misheard text:", self.edit_original)
+
+        self.edit_replacement = QLineEdit(replacement.strip())
+        self.edit_replacement.setPlaceholderText("e.g. Hisham, King Fahd, AirAsia")
+        form_layout.addRow("Preferred spelling:", self.edit_replacement)
+
+        self.chk_case_sensitive = QCheckBox("Match exact case only")
+        self.chk_case_sensitive.setChecked(case_sensitive)
+        self.chk_case_sensitive.setToolTip("If unchecked, matches regardless of uppercase or lowercase")
+        form_layout.addRow("", self.chk_case_sensitive)
+
+        layout.addLayout(form_layout)
+
+        # Buttons
+        btn_box = QDialogButtonBox(
+            QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel
+        )
+        btn_ok = btn_box.button(QDialogButtonBox.StandardButton.Ok)
+        btn_ok.setText("Save & Apply")
+        btn_box.accepted.connect(self._on_accept)
+        btn_box.rejected.connect(self.reject)
+        layout.addWidget(btn_box)
+
+        # Focus management
+        if original.strip():
+            self.edit_replacement.setFocus()
+            self.edit_replacement.selectAll()
+        else:
+            self.edit_original.setFocus()
+
+    def _on_accept(self):
+        orig = self.edit_original.text().strip()
+        repl = self.edit_replacement.text().strip()
+        if not orig:
+            QMessageBox.warning(self, "Invalid Input", "Please provide the original voice or misheard word/phrase.")
+            self.edit_original.setFocus()
+            return
+        if not repl:
+            QMessageBox.warning(self, "Invalid Input", "Please provide your preferred spelling.")
+            self.edit_replacement.setFocus()
+            return
+        if orig.lower() == repl.lower() and not self.chk_case_sensitive.isChecked():
+            QMessageBox.information(self, "No Change", "The original and preferred spelling are identical.")
+            return
+        self.accept()
+
+    def get_data(self) -> tuple[str, str, bool]:
+        return (
+            self.edit_original.text().strip(),
+            self.edit_replacement.text().strip(),
+            self.chk_case_sensitive.isChecked(),
+        )
+

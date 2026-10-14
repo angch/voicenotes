@@ -135,6 +135,7 @@ DEFAULT_SETTINGS: Dict[str, Any] = {
     "word_wrap": True,
     "timestamp_format": "[{start} - {end}]",
     "last_open_folder": "",
+    "vocabulary_replacements": [],
 }
 
 

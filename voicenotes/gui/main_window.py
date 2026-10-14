@@ -68,8 +68,15 @@ from voicenotes.export.exporters import (
     export_to_vtt,
     save_export_to_file,
 )
+from voicenotes.engine.vocabulary import VocabularyManager
 from voicenotes.gui.audio_player import AudioPlayerWidget
-from voicenotes.gui.dialogs import AboutDialog, RecordDialog, SendVoiceDialog, SettingsDialog
+from voicenotes.gui.dialogs import (
+    AboutDialog,
+    RecordDialog,
+    SendVoiceDialog,
+    SetPreferredSpellingDialog,
+    SettingsDialog,
+)
 from voicenotes.gui.find_bar import FindReplaceBar
 from voicenotes.gui.styles import create_palette, get_effective_theme, get_stylesheet
 from voicenotes.gui.speakers_panel import (
@@ -81,6 +88,7 @@ from voicenotes.gui.transcription_worker import (
     LiveTranscriptionWorker,
     TranscriptionWorker,
 )
+from voicenotes.gui.vocabulary_panel import VocabularyPanel
 
 
 class NotepadTextEdit(QTextEdit):
@@ -117,6 +125,17 @@ class NotepadTextEdit(QTextEdit):
         menu = self.createStandardContextMenu()
         menu.addSeparator()
         main_win = self.window()
+
+        cursor = self.textCursor()
+        selected_text = cursor.selectedText().strip()
+        if selected_text:
+            clean_selected = selected_text.replace("\u2029", " ")
+            disp = clean_selected if len(clean_selected) <= 24 else clean_selected[:22] + "..."
+            act_vocab = menu.addAction(f'🔤 Set Preferred Spelling for "{disp}"...')
+            if hasattr(main_win, "prompt_add_vocabulary"):
+                act_vocab.triggered.connect(lambda: main_win.prompt_add_vocabulary(clean_selected))
+            menu.addSeparator()
+
         if hasattr(main_win, "_copy_plain_text"):
             act_plain = menu.addAction("Copy Text (No Timestamps)")
             act_plain.triggered.connect(main_win._copy_plain_text)
@@ -139,6 +158,7 @@ class MainWindow(QMainWindow):
             self.setWindowIcon(QIcon(str(icon_path)))
 
         self.transcriber = SpeechTranscriber()
+        self.vocab_manager = VocabularyManager()
         self.worker: Optional[TranscriptionWorker] = None
         self.live_worker: Optional[LiveTranscriptionWorker] = None
         self._is_recording: bool = False
@@ -281,6 +301,12 @@ class MainWindow(QMainWindow):
         self.btn_copy_timestamps.clicked.connect(self._copy_timestamped_text)
         action_layout.addWidget(self.btn_copy_timestamps)
 
+        self.btn_preferred_spelling = QPushButton("🔤 Preferred Spelling...")
+        self.btn_preferred_spelling.setObjectName("btnPreferredSpelling")
+        self.btn_preferred_spelling.setToolTip("Set your preferred spelling or name for selected text (Alt+W)")
+        self.btn_preferred_spelling.clicked.connect(self._on_action_bar_preferred_spelling)
+        action_layout.addWidget(self.btn_preferred_spelling)
+
         action_layout.addStretch(1)
 
         self.btn_send_voice = QPushButton("Send Voice for Tuning...")
@@ -294,10 +320,27 @@ class MainWindow(QMainWindow):
 
         self.splitter.addWidget(editor_container)
 
+        # Right Sidebar Splitter: Speakers Panel (Top) + Vocabulary Panel (Bottom)
+        self.right_sidebar_splitter = QSplitter(Qt.Orientation.Vertical)
+        self.right_sidebar_splitter.setObjectName("rightSidebarSplitter")
+
         self.speakers_panel = SpeakersPanel(self)
         self.speakers_panel.speaker_renamed.connect(self._on_speaker_renamed)
         self.speakers_panel.play_speaker_sample.connect(self._on_play_speaker_sample)
-        self.splitter.addWidget(self.speakers_panel)
+        self.right_sidebar_splitter.addWidget(self.speakers_panel)
+
+        self.vocabulary_panel = VocabularyPanel(self)
+        self.vocabulary_panel.rule_added.connect(self._on_vocabulary_rule_added)
+        self.vocabulary_panel.rule_deleted.connect(self._on_vocabulary_rule_deleted)
+        self.vocabulary_panel.rule_edited.connect(self._on_vocabulary_rule_edited)
+        self.vocabulary_panel.vocabulary_imported.connect(self._on_vocabulary_imported)
+        self.right_sidebar_splitter.addWidget(self.vocabulary_panel)
+
+        self.right_sidebar_splitter.setStretchFactor(0, 3)
+        self.right_sidebar_splitter.setStretchFactor(1, 2)
+        self.right_sidebar_splitter.setSizes([350, 250])
+
+        self.splitter.addWidget(self.right_sidebar_splitter)
 
         self.splitter.setStretchFactor(0, 4)
         self.splitter.setStretchFactor(1, 1)
@@ -454,6 +497,22 @@ class MainWindow(QMainWindow):
         act_replace.triggered.connect(self._on_replace)
         menu_edit.addAction(act_replace)
 
+        act_preferred = QAction("Set &Preferred Spelling...", self)
+        act_preferred.setShortcut("Alt+W")
+        act_preferred.setToolTip("Set custom preferred spelling or name for selected text and backfill transcript")
+        act_preferred.triggered.connect(self._on_action_bar_preferred_spelling)
+        menu_edit.addAction(act_preferred)
+
+        act_import_vocab = QAction("&Import Vocabulary...", self)
+        act_import_vocab.setToolTip("Import custom vocabulary rules from JSON, CSV, TSV, or text files")
+        act_import_vocab.triggered.connect(self.vocabulary_panel._on_import_clicked)
+        menu_edit.addAction(act_import_vocab)
+
+        act_export_vocab = QAction("&Export Vocabulary...", self)
+        act_export_vocab.setToolTip("Export custom vocabulary rules to JSON or CSV file")
+        act_export_vocab.triggered.connect(self.vocabulary_panel._on_export_clicked)
+        menu_edit.addAction(act_export_vocab)
+
         # --- Audio Menu ---
         menu_audio = menubar.addMenu("&Audio")
 
@@ -525,6 +584,12 @@ class MainWindow(QMainWindow):
         self.act_speakers_panel.setChecked(True)
         self.act_speakers_panel.triggered.connect(self._toggle_speakers_panel)
         menu_view.addAction(self.act_speakers_panel)
+
+        self.act_vocab_panel = QAction("Show Vocabulary Panel", self)
+        self.act_vocab_panel.setCheckable(True)
+        self.act_vocab_panel.setChecked(True)
+        self.act_vocab_panel.triggered.connect(self._toggle_vocab_panel)
+        menu_view.addAction(self.act_vocab_panel)
 
         menu_theme = menu_view.addMenu("&Theme")
         self.theme_group = QActionGroup(self)
@@ -601,6 +666,8 @@ class MainWindow(QMainWindow):
         if self.current_result:
             self._render_transcript_html(self.current_result)
         self.speakers_panel.refresh()
+        if hasattr(self, "vocabulary_panel"):
+            self.vocabulary_panel.refresh()
 
     def _toggle_theme(self):
         new_theme = "dark" if self.act_dark.isChecked() else "light"
@@ -613,6 +680,8 @@ class MainWindow(QMainWindow):
             if self.current_result:
                 self._render_transcript_html(self.current_result)
             self.speakers_panel.refresh()
+            if hasattr(self, "vocabulary_panel"):
+                self.vocabulary_panel.refresh()
 
     def _apply_theme(self):
         theme_pref = config.get("theme", "system")
@@ -735,6 +804,16 @@ class MainWindow(QMainWindow):
 
     def _toggle_speakers_panel(self):
         self.speakers_panel.setVisible(self.act_speakers_panel.isChecked())
+        self._update_sidebar_splitter_visibility()
+
+    def _toggle_vocab_panel(self):
+        self.vocabulary_panel.setVisible(self.act_vocab_panel.isChecked())
+        self._update_sidebar_splitter_visibility()
+
+    def _update_sidebar_splitter_visibility(self):
+        show_sidebar = self.act_speakers_panel.isChecked() or self.act_vocab_panel.isChecked()
+        if hasattr(self, "right_sidebar_splitter"):
+            self.right_sidebar_splitter.setVisible(show_sidebar)
 
     def _on_toggle_detect_speakers(self, checked: bool):
         config.set("diarization_enabled", checked)
@@ -882,12 +961,14 @@ class MainWindow(QMainWindow):
         """Handle ~250ms low-latency draft preview from streaming audio."""
         if not self._is_recording:
             return
-        self._live_draft_text = draft_text
+        clean_draft, _ = self.vocab_manager.apply_to_text(draft_text)
+        self._live_draft_text = clean_draft
         self._live_draft_start = start_sec
         self._render_live_dictation()
 
     def _on_live_segment_ready(self, seg: TranscriptionSegment):
         """Handle refined/committed segment from refinement pass."""
+        self.vocab_manager.apply_to_segment(seg)
         self._live_committed_segments.append(seg)
         self._live_draft_text = ""
         self._render_live_dictation()
@@ -952,6 +1033,7 @@ class MainWindow(QMainWindow):
 
         # Load generated WAV into player so user can seek/listen immediately
         self.load_audio_file(wav_path)
+        self.vocab_manager.apply_to_result(result)
         self.current_result = result
 
         # Re-render complete transcript with speaker tags if diarized
@@ -1007,6 +1089,7 @@ class MainWindow(QMainWindow):
         self._on_live_segment_ready(seg)
 
     def _on_worker_finished(self, result: TranscriptionResult):
+        self.vocab_manager.apply_to_result(result)
         self.current_result = result
         self.progress_bar.setValue(100)
         self.lbl_progress.setText("Transcription complete!")
@@ -1077,6 +1160,89 @@ class MainWindow(QMainWindow):
         self._is_modified = True
         self._update_status_bar()
         self.status_bar.showMessage(f"Renamed speaker '{old_name}' to '{new_name}'", 3000)
+
+    def prompt_add_vocabulary(self, prefill_text: str = ""):
+        """Open dialog to set preferred spelling for a word or phrase."""
+        dlg = SetPreferredSpellingDialog(
+            original=prefill_text,
+            parent=self,
+        )
+        if dlg.exec():
+            orig, repl, case_sens = dlg.get_data()
+            self._on_vocabulary_rule_added(orig, repl, case_sens)
+
+    def _on_action_bar_preferred_spelling(self):
+        """Action bar or shortcut handler: grabs selected text and opens dialog."""
+        cursor = self.editor.textCursor()
+        selected = cursor.selectedText().strip().replace("\u2029", " ")
+        self.prompt_add_vocabulary(selected)
+
+    def _on_vocabulary_rule_added(self, orig: str, repl: str, case_sens: bool):
+        self.vocab_manager.add_or_update_rule(orig, repl, case_sens)
+        updated_count = self._backfill_vocabulary_replacements()
+        self.vocabulary_panel.reload_rules()
+        self.status_bar.showMessage(
+            f"Set preferred spelling: '{orig}' ➔ '{repl}' ({updated_count} occurrence(s) updated)", 4000
+        )
+
+    def _on_vocabulary_rule_deleted(self, orig: str):
+        self.vocab_manager.remove_rule(orig)
+        self.vocabulary_panel.reload_rules()
+        self.status_bar.showMessage(f"Removed rule for '{orig}'", 3000)
+
+    def _on_vocabulary_rule_edited(self, orig: str, repl: str, case_sens: bool):
+        self.vocab_manager.add_or_update_rule(orig, repl, case_sens)
+        updated_count = self._backfill_vocabulary_replacements()
+        self.vocabulary_panel.reload_rules()
+        self.status_bar.showMessage(
+            f"Updated rule: '{orig}' ➔ '{repl}' ({updated_count} occurrence(s) updated)", 4000
+        )
+
+    def _backfill_vocabulary_replacements(self) -> int:
+        """
+        Backfill and replace all occurrences of active vocabulary rules across
+        all transcription done so far (both completed results and live sessions).
+        """
+        updated_count = 0
+
+        # 1. Backfill structured TranscriptionResult if present
+        if self.current_result:
+            count = self.vocab_manager.apply_to_result(self.current_result)
+            updated_count += count
+            self._render_transcript_html(self.current_result)
+
+        # 2. Backfill live committed segments & draft if live recording is active
+        if hasattr(self, "_live_committed_segments") and self._live_committed_segments:
+            count = self.vocab_manager.apply_to_segments(self._live_committed_segments)
+            updated_count += count
+            if hasattr(self, "_live_draft_text") and self._live_draft_text:
+                self._live_draft_text, _ = self.vocab_manager.apply_to_text(self._live_draft_text)
+            self._render_live_dictation()
+
+        # 3. If user is editing plain text without structured segments
+        if not self.current_result and not getattr(self, "_is_recording", False):
+            plain = self.editor.toPlainText()
+            new_plain, count = self.vocab_manager.apply_to_text(plain)
+            if count > 0:
+                updated_count += count
+                cursor = self.editor.textCursor()
+                pos = cursor.position()
+                self.editor.setPlainText(new_plain)
+                cursor.setPosition(min(pos, len(new_plain)))
+                self.editor.setTextCursor(cursor)
+
+        self._is_modified = True
+        self._update_status_bar()
+        return updated_count
+
+    def _on_vocabulary_imported(self, count: int):
+        """Handle newly imported vocabulary rules and backfill transcript."""
+        self.vocab_manager.load()
+        updated_count = self._backfill_vocabulary_replacements()
+        self.status_bar.showMessage(
+            f"Imported {count} vocabulary rule(s) ({updated_count} occurrence(s) updated in transcript)",
+            4000,
+        )
 
     def _on_play_speaker_sample(self, start_sec: float):
         """Play audio sample of the selected speaker."""

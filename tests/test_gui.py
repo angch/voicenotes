@@ -664,5 +664,160 @@ def test_archive_package_and_export_audio_gui(app_window, tmp_path, monkeypatch)
         assert "archive_metadata.json" in namelist
 
 
+def test_preferred_spelling_dialog(app_window, qtbot):
+    """Test SetPreferredSpellingDialog pre-population and validation."""
+    from voicenotes.gui.dialogs import SetPreferredSpellingDialog
+
+    win = app_window
+    dlg = SetPreferredSpellingDialog(
+        original="Hicham",
+        replacement="Hisham",
+        case_sensitive=False,
+        parent=win,
+    )
+    qtbot.addWidget(dlg)
+    dlg.show()
+
+    assert dlg.edit_original.text() == "Hicham"
+    assert dlg.edit_replacement.text() == "Hisham"
+    assert dlg.chk_case_sensitive.isChecked() is False
+
+    orig, repl, case_sens = dlg.get_data()
+    assert orig == "Hicham"
+    assert repl == "Hisham"
+    assert case_sens is False
+
+
+def test_vocabulary_panel_and_cards(app_window, qtbot):
+    """Test VocabularyPanel displaying cards, adding and deleting rules."""
+    from voicenotes.gui.vocabulary_panel import VocabularyPanel
+
+    win = app_window
+    panel = win.vocabulary_panel
+    assert panel is not None
+
+    # Clear rules first
+    win.vocab_manager.clear()
+    panel.reload_rules()
+    assert panel.cards_layout.count() >= 1
+
+    # Add rule via signal
+    win._on_vocabulary_rule_added("Hicham", "Hisham", False)
+    assert len(win.vocab_manager.get_rules()) == 1
+    panel.reload_rules()
+    assert panel.lbl_count.text() == "(1)"
+
+    # Edit rule
+    win._on_vocabulary_rule_edited("Hicham", "Hisham Tariq", False)
+    assert win.vocab_manager.get_rules()[0]["replacement"] == "Hisham Tariq"
+
+    # Delete rule
+    win._on_vocabulary_rule_deleted("Hicham")
+    assert len(win.vocab_manager.get_rules()) == 0
+    assert panel.lbl_count.text() == "(0)"
+
+
+def test_main_window_preferred_spelling_backfill(app_window, qtbot):
+    """Test setting preferred spelling on selected text and backfilling active transcript."""
+    from voicenotes.engine.transcriber import TranscriptionResult, TranscriptionSegment
+
+    win = app_window
+    seg1 = TranscriptionSegment(
+        id=1,
+        start=0.0,
+        end=5.0,
+        text="So Hicham, we start with bad news at King Fad airport.",
+        speaker="Speaker 1",
+    )
+    seg2 = TranscriptionSegment(
+        id=2,
+        start=5.0,
+        end=10.0,
+        text="Hicham said Air Asia flights were delayed.",
+        speaker="Speaker 2",
+    )
+    res = TranscriptionResult(
+        audio_path="test.wav",
+        duration=10.0,
+        language="en",
+        language_probability=0.99,
+        segments=[seg1, seg2],
+        model_name="small",
+        num_speakers=2,
+        diarization_enabled=True,
+    )
+    win.current_result = res
+    win._render_transcript_html(res)
+
+    # Verify initial text
+    assert "Hicham" in win.editor.toPlainText()
+
+    # Clear and set replacement rule
+    win.vocab_manager.clear()
+    win._on_vocabulary_rule_added("Hicham", "Hisham", False)
+
+    # Verify backfill updated segments and editor HTML immediately
+    assert seg1.text == "So Hisham, we start with bad news at King Fad airport."
+    assert seg2.text == "Hisham said Air Asia flights were delayed."
+    assert "Hisham" in win.editor.toPlainText()
+    assert "Hicham" not in win.editor.toPlainText()
+
+    # Add a second rule for multi-word phrase
+    win._on_vocabulary_rule_added("King Fad", "King Fahd", False)
+    assert "King Fahd" in win.editor.toPlainText()
+    assert "King Fad" not in win.editor.toPlainText()
+
+    # Clean up
+    win.vocab_manager.clear()
+
+
+def test_main_window_vocabulary_import_signal(app_window, tmp_path):
+    """Test importing vocabulary file triggers backfill across transcript in MainWindow."""
+    from voicenotes.engine.transcriber import TranscriptionResult, TranscriptionSegment
+
+    win = app_window
+    seg = TranscriptionSegment(
+        id=1,
+        start=0.0,
+        end=3.0,
+        text="Welcome to Petronas Twin Towers with Air Asia travel.",
+        speaker="Speaker 1",
+    )
+    res = TranscriptionResult(
+        audio_path="test.wav",
+        duration=3.0,
+        language="en",
+        language_probability=0.99,
+        segments=[seg],
+        model_name="small",
+    )
+    win.current_result = res
+    win._render_transcript_html(res)
+    assert "Air Asia" in win.editor.toPlainText()
+
+    # Create a vocabulary file to import
+    vocab_json = tmp_path / "imported_rules.json"
+    vocab_json.write_text(
+        '[{"original": "Air Asia", "replacement": "AirAsia", "case_sensitive": false}]',
+        encoding="utf-8",
+    )
+
+    # Import via vocab_manager
+    imported, _ = win.vocab_manager.import_from_file(vocab_json, merge=True)
+    assert imported == 1
+
+    # Emit signal that vocabulary panel would emit
+    win.vocabulary_panel.vocabulary_imported.emit(imported)
+
+    # Verify backfill updated segment and text
+    assert seg.text == "Welcome to Petronas Twin Towers with AirAsia travel."
+    assert "AirAsia" in win.editor.toPlainText()
+    assert "Air Asia" not in win.editor.toPlainText()
+
+    win.vocab_manager.clear()
+
+
+
+
 
 

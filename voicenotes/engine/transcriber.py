@@ -18,10 +18,11 @@ from typing import Any, Callable, Dict, List, Optional, Union
 import numpy as np
 from faster_whisper import WhisperModel
 
-from voicenotes.config import AVAILABLE_WHISPER_MODELS, get_models_dir
+from voicenotes.config import AVAILABLE_WHISPER_MODELS, config, get_models_dir
 from voicenotes.engine.audio_utils import format_timestamp, load_audio
 from voicenotes.engine.diarizer import SpeakerDiarizer
 from voicenotes.engine.model_manager import ModelManager
+from voicenotes.engine.vocabulary import apply_replacement_rules
 
 logger = logging.getLogger(__name__)
 
@@ -322,6 +323,7 @@ class SpeechTranscriber:
         language: Optional[str] = None,
         diarize: bool = True,
         num_speakers: Optional[Union[int, str]] = None,
+        vocabulary_rules: Optional[List[Dict[str, Any]]] = None,
         progress_callback: Optional[Callable[[str, int], None]] = None,
         segment_callback: Optional[Callable[[TranscriptionSegment], None]] = None,
     ) -> TranscriptionResult:
@@ -334,11 +336,15 @@ class SpeechTranscriber:
         - language: language code ('en', 'es', etc.) or None / 'auto'
         - diarize: whether to perform speaker diarization
         - num_speakers: 'auto' or integer (2, 3...)
+        - vocabulary_rules: custom phonetic/name replacement rules
         - progress_callback: callback(status_message, percent_complete)
         - segment_callback: callback(transcription_segment) streamed in real-time
         """
         start_time = time.time()
         audio_path_str = str(audio_source) if isinstance(audio_source, (str, Path)) else None
+
+        if vocabulary_rules is None:
+            vocabulary_rules = config.get("vocabulary_replacements", [])
 
         if progress_callback:
             progress_callback("Loading and preparing audio...", 5)
@@ -412,20 +418,27 @@ class SpeechTranscriber:
             words = []
             if seg.words:
                 for w in seg.words:
+                    w_text = w.word
+                    if vocabulary_rules:
+                        w_text, _ = apply_replacement_rules(w_text, vocabulary_rules)
                     words.append(
                         TranscriptionWord(
-                            word=w.word,
+                            word=w_text,
                             start=w.start,
                             end=w.end,
                             probability=w.probability,
                         )
                     )
 
+            seg_text = seg.text
+            if vocabulary_rules:
+                seg_text, _ = apply_replacement_rules(seg_text, vocabulary_rules)
+
             seg_dict = {
                 "id": seg_idx,
                 "start": seg.start,
                 "end": seg.end,
-                "text": seg.text,
+                "text": seg_text,
                 "words": words,
                 "speaker": None,
             }
@@ -436,7 +449,7 @@ class SpeechTranscriber:
                 id=seg_idx,
                 start=seg.start,
                 end=seg.end,
-                text=seg.text,
+                text=seg_text,
                 speaker=None,
                 words=words,
             )
@@ -511,6 +524,10 @@ class SpeechTranscriber:
                 prev.words.extend(seg_obj.words)
             else:
                 merged_segments.append(seg_obj)
+
+        if vocabulary_rules:
+            for s in merged_segments:
+                s.text, _ = apply_replacement_rules(s.text, vocabulary_rules)
 
         if progress_callback:
             elapsed = time.time() - start_time
