@@ -46,8 +46,18 @@ def get_resource_dirs() -> list[Path]:
             dirs.append(res_dir)
         # Directory containing VoiceNotes.app (portable layout)
         portable_dir = exe_path.parent.parent.parent
-        if portable_dir.exists() and portable_dir not in dirs:
-            dirs.append(portable_dir)
+    # Standard Linux system installation paths
+    if sys.platform.startswith("linux"):
+        if getattr(sys, "frozen", False):
+            exe_path = Path(sys.executable).resolve()
+            # If exe is in /usr/lib/voicenotes/VoiceNotes -> prefix is /usr
+            prefix_share = exe_path.parent.parent.parent / "share" / "voicenotes"
+            if prefix_share.exists() and prefix_share not in dirs:
+                dirs.append(prefix_share)
+
+        for sys_path in (Path("/usr/share/voicenotes"), Path("/usr/lib/voicenotes"), Path("/opt/voicenotes")):
+            if sys_path.exists() and sys_path not in dirs:
+                dirs.append(sys_path)
 
     return dirs
 
@@ -71,8 +81,15 @@ def get_app_icon_path() -> Path:
 def get_models_dir() -> Path:
     """
     Return the directory where offline models are stored.
-    Checks bundled models first, then app_dir/models, then user cache.
+    Checks VOICENOTES_MODELS_DIR env, bundled models first, then app_dir/models, then user cache.
     """
+    # 0. Explicit environment variable override
+    env_models = os.environ.get("VOICENOTES_MODELS_DIR")
+    if env_models:
+        env_path = Path(env_models)
+        if env_path.exists():
+            return env_path
+
     # 1. Search candidate resource directories
     for base in get_resource_dirs():
         candidate = base / "models"
@@ -87,6 +104,12 @@ def get_models_dir() -> Path:
 
 def get_samples_dir() -> Path:
     """Return the directory containing audio test samples."""
+    env_samples = os.environ.get("VOICENOTES_SAMPLES_DIR")
+    if env_samples:
+        env_path = Path(env_samples)
+        if env_path.exists():
+            return env_path
+
     for base in get_resource_dirs():
         candidate = base / "samples"
         if candidate.exists():

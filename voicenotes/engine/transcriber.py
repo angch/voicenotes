@@ -27,135 +27,14 @@ from voicenotes.engine.vocabulary import apply_replacement_rules
 
 logger = logging.getLogger(__name__)
 
-_CUDA_INITIALIZED = False
-
-
-def setup_cuda_dll_paths() -> List[str]:
-    """Register Windows DLL search paths for NVIDIA CUDA packages (cuBLAS, cuDNN, etc.)."""
-    global _CUDA_INITIALIZED
-    added_paths: List[str] = []
-    if sys.platform != "win32":
-        return added_paths
-
-    # 1. Pip package directories (nvidia-cublas-cu12, nvidia-cudnn-cu12, etc.)
-    prefixes = [sys.prefix]
-    base_p = getattr(sys, "base_prefix", None)
-    if base_p and base_p != sys.prefix:
-        prefixes.append(base_p)
-
-    for prefix in prefixes:
-        pattern = os.path.join(prefix, "Lib", "site-packages", "nvidia", "*", "bin")
-        for p in glob.glob(pattern):
-            if os.path.isdir(p):
-                try:
-                    os.add_dll_directory(p)
-                    added_paths.append(p)
-                except Exception:
-                    pass
-
-    # 2. CUDA_PATH environment variable if NVIDIA CUDA Toolkit is installed
-    cuda_path = os.environ.get("CUDA_PATH")
-    if cuda_path:
-        bin_dir = os.path.join(cuda_path, "bin")
-        if os.path.isdir(bin_dir):
-            try:
-                os.add_dll_directory(bin_dir)
-                added_paths.append(bin_dir)
-            except Exception:
-                pass
-
-    _CUDA_INITIALIZED = True
-    return added_paths
-
-
-def is_cuda_available() -> bool:
-    """Check whether NVIDIA CUDA acceleration is available on this system."""
-    setup_cuda_dll_paths()
-    try:
-        import ctranslate2
-        import ctypes
-
-        if ctranslate2.get_cuda_device_count() <= 0:
-            return False
-
-        # Verify cuBLAS DLL can be loaded
-        for dll_name in ("cublas64_12.dll", "cublas64_11.dll"):
-            try:
-                ctypes.CDLL(dll_name)
-                return True
-            except Exception:
-                pass
-        return False
-    except Exception:
-        return False
-
-
-def get_cuda_device_name() -> Optional[str]:
-    """Return the model name of the primary NVIDIA GPU, or None if unavailable."""
-    if not is_cuda_available():
-        return None
-
-    # 1. Direct NVML query via ctypes (instant, standard Windows NVIDIA driver)
-    try:
-        import ctypes
-        nvml = ctypes.CDLL("nvml.dll")
-        nvml.nvmlInit()
-        handle = ctypes.c_void_p()
-        nvml.nvmlDeviceGetHandleByIndex(0, ctypes.byref(handle))
-        name_buf = ctypes.create_string_buffer(128)
-        nvml.nvmlDeviceGetName(handle, name_buf, 128)
-        nvml.nvmlShutdown()
-        name = name_buf.value.decode("utf-8").strip()
-        if name:
-            return name
-    except Exception:
-        pass
-
-    # 2. PowerShell WMI fallback
-    try:
-        import subprocess
-        out = subprocess.check_output(
-            ["powershell", "-NoProfile", "-Command", "Get-CimInstance Win32_VideoController | Select-Object -ExpandProperty Name"],
-            text=True,
-            timeout=2,
-        )
-        for line in out.strip().splitlines():
-            line = line.strip()
-            if "NVIDIA" in line.upper():
-                return line
-    except Exception:
-        pass
-
-    return "NVIDIA CUDA GPU"
-
-
-def get_hardware_acceleration_info() -> tuple[str, str]:
-    """
-    Return (status_label, tooltip) describing current hardware acceleration or compute engine.
-    Works across Windows (CUDA / CPU), macOS (Apple Silicon / CPU), and Linux.
-    """
-    if is_cuda_available():
-        gpu_name = get_cuda_device_name() or "NVIDIA CUDA GPU"
-        return f"⚡ NVIDIA CUDA ({gpu_name})", f"Hardware Acceleration active: {gpu_name} (float16)"
-
-    if sys.platform == "darwin":
-        try:
-            import subprocess
-
-            brand = subprocess.check_output(
-                ["sysctl", "-n", "machdep.cpu.brand_string"],
-                stderr=subprocess.DEVNULL,
-                text=True,
-            ).strip()
-            if brand:
-                return f"⚡ Offline Ready ({brand} INT8)", f"Execution mode: {brand} (Accelerated INT8 / NEON)"
-        except Exception:
-            pass
-        machine = platform.machine()
-        if "arm" in machine.lower():
-            return "⚡ Offline Ready (Apple Silicon INT8)", "Execution mode: Apple Silicon (Accelerated INT8 / NEON)"
-
-    return "⚡ Offline Ready (CPU INT8)", "Execution mode: Optimized CPU (INT8 quantization)"
+from voicenotes.compat import (
+    get_cuda_device_name,
+    get_hardware_acceleration_info,
+    get_rocm_device_name,
+    is_cuda_available,
+    is_rocm_available,
+    _setup_cuda_libraries as setup_cuda_dll_paths,
+)
 
 
 
@@ -285,15 +164,18 @@ class SpeechTranscriber:
         return self._current_device or ("cuda" if is_cuda_available() else "cpu")
 
     def _get_device_and_compute(self, requested_device: str = "auto") -> tuple[str, str]:
-        """Determine device and compute type with automatic fallback."""
+        """Determine device and compute type with automatic fallback across CUDA, ROCm, and CPU."""
         if requested_device == "cpu":
             return "cpu", "int8"
 
-        if requested_device in ("auto", "cuda"):
+        if requested_device in ("auto", "cuda", "rocm"):
             if is_cuda_available():
                 return "cuda", "float16"
-            elif requested_device == "cuda":
-                logger.warning("NVIDIA CUDA requested but not available; falling back to CPU.")
+            elif is_rocm_available():
+                # CTranslate2 HIP uses 'cuda' device abstraction for AMD ROCm
+                return "cuda", "float16"
+            elif requested_device in ("cuda", "rocm"):
+                logger.warning(f"GPU acceleration '{requested_device}' requested but not available; falling back to CPU.")
 
         return "cpu", "int8"
 

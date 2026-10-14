@@ -15,6 +15,8 @@ datas = [
     ('samples', 'samples'),
     ('assets', 'assets'),
 ]
+if os.path.isdir('voicenotes/lib'):
+    datas.append(('voicenotes/lib', 'voicenotes/lib'))
 
 # Collect metadata and data files for machine learning packages
 datas += collect_data_files('faster_whisper')
@@ -50,8 +52,20 @@ elif sys.platform == 'darwin':
         if os.path.isdir(target_dir):
             for dylib_file in glob.glob(os.path.join(target_dir, '*.dylib')):
                 binaries.append((dylib_file, '.'))
+elif sys.platform.startswith('linux'):
+    # Collect Linux runtime libraries (bundled portaudio, xcb-cursor)
+    if os.path.isdir('voicenotes/lib'):
+        for so_file in glob.glob('voicenotes/lib/*.so*'):
+            binaries.append((so_file, '.'))
+
+    for pkg in ('nvidia.cublas', 'nvidia.cudnn', 'nvidia.cuda_nvrtc'):
+        try:
+            binaries += collect_dynamic_libs(pkg)
+        except Exception:
+            pass
 
 hiddenimports = [
+    'voicenotes.compat',
     'av',
     'av.audio',
     'av.container',
@@ -158,8 +172,8 @@ if sys.platform == 'darwin':
             'CFBundleDisplayName': 'VoiceNotes',
             'CFBundleGetInfoString': 'VoiceNotes - Offline Speech Transcriber with Speaker Diarization',
             'CFBundleIdentifier': 'com.voicenotes.desktop',
-            'CFBundleVersion': '0.4.0',
-            'CFBundleShortVersionString': '0.4.0',
+            'CFBundleVersion': '0.5.0',
+            'CFBundleShortVersionString': '0.5.0',
             'NSHumanReadableCopyright': 'VoiceNotes Contributors',
             'NSMicrophoneUsageDescription': 'VoiceNotes requires microphone access for audio recording and live voice dictation.',
             'NSHighResolutionCapable': True,

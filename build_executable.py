@@ -24,6 +24,14 @@ def parse_args():
         action="store_true",
         help="Download models into ./models/ without executing PyInstaller",
     )
+    parser.add_argument(
+        "--deb",
+        choices=["all-in-one", "split", "both"],
+        nargs="?",
+        const="all-in-one",
+        default=None,
+        help="Generate Debian/Ubuntu .deb package on Linux ('all-in-one' for single package, 'split' for two packages, or 'both')",
+    )
     return parser.parse_args()
 
 
@@ -155,6 +163,14 @@ def build():
             print(" Portable Directory: dist/VoiceNotes/")
         print(" Anyone can run this without Python installed!")
         print("=========================================================")
+
+        # Optional Debian packaging on Linux
+        if args.deb:
+            deb_script = root_dir / "scripts" / "build_deb.py"
+            if deb_script.exists():
+                print(f"\nTriggering Debian packaging (mode: {args.deb})...")
+                deb_cmd = [sys.executable, str(deb_script), "--mode", args.deb]
+                subprocess.run(deb_cmd, check=True)
     else:
         print(f"\n[ERROR] Output executable not found at {dist_dir}", file=sys.stderr)
         sys.exit(1)

@@ -62,14 +62,15 @@ All processing runs locally on device once models are downloaded. No recordings 
 ## Quick Start
 
 ### Prerequisites
-- macOS (Apple Silicon M1–M4 or Intel) or Windows 10/11
+- Linux (Ubuntu 22.04 / 24.04+, Debian 11/12), macOS (Apple Silicon M1–M4 or Intel), or Windows 10/11
 - [uv](https://docs.astral.sh/uv/) (recommended) or Python 3.10+
 
-### Option A: One-Click Run (macOS)
-Run in terminal or double-click `run.command` in Finder:
+### Option A: One-Click Run (Linux & macOS)
+Run in terminal:
 ```bash
 ./run.sh
 ```
+*On Linux, `run.sh` automatically detects whether you are running under **Wayland** or **X11**, configures the appropriate Qt platform plugins, preloads bundled PortAudio/XCB libraries, and initializes NVIDIA CUDA or AMD ROCm GPU acceleration if present.*
 
 ### Option B: One-Click Run (Windows)
 Double-click `run.bat` or run in PowerShell:
@@ -85,7 +86,29 @@ cd voicenotes
 
 # Run the desktop application
 uv run python main.py
+
+# Or inspect system and GPU acceleration diagnostics
+uv run python main.py --info
 ```
+
+---
+
+## Linux Support: Ubuntu / Debian
+
+VoiceNotes provides complete, native support for modern Linux distributions (tested on Ubuntu 24.04 LTS Noble Numbat and Debian 12):
+
+- **Display Server Compatibility**: Native **Wayland** (`wayland;xcb`) with seamless fallback to **X11** (`xcb`).
+- **Zero-Crash Qt 6 Experience**: Bundles `libxcb-cursor.so.0` and `libportaudio.so.2` inside the package, preventing common `xcb` startup crashes on fresh Ubuntu 24.04 installations without requiring root intervention.
+- **Hardware Acceleration Out of the Box**:
+  - **CPU INT8**: Parallelized OpenMP vector compute; guaranteed to run fast on all modern x86_64 processors.
+  - **NVIDIA CUDA**: Automatic discovery of cuBLAS and cuDNN libraries (`CUDA 11/12`) with FP16 Tensor Core acceleration.
+  - **AMD ROCm**: Automatic detection of HIP runtime (`libamdhip64.so`), `/dev/kfd`, and ROCm execution providers.
+  - Verify your active GPU and display engine at any time with:
+    ```bash
+    voicenotes --info
+    # or
+    voicenotes-gpu-check
+    ```
 
 ---
 
@@ -115,26 +138,61 @@ uv run python main.py samples/two_speakers_conversation.wav --cli --speakers 2
 
 # Transcribe single-speaker audio with tiny model and export to SRT
 uv run python main.py samples/jfk.flac --cli --model tiny -o jfk.srt
+
+# Print system diagnostics and active hardware acceleration engine
+uv run python main.py --info
 ```
 
 ---
 
-## Building the Standalone Executable & Packages
+## Building Standalone Executables & Debian (.deb) Packages
 
-To generate standalone standalone distributions without requiring a Python installation:
+VoiceNotes includes automated scripts to package the entire project into self-contained distributions requiring zero Python on the target machine.
 
-1. Run the build script:
-   ```bash
-   uv run python build_executable.py
-   ```
-2. The bundled application is generated in `dist/`:
-   - **macOS**: `dist/VoiceNotes.app` application bundle and `dist/VoiceNotes.dmg` disk image.
-   - **Windows**: `dist/VoiceNotes/VoiceNotes.exe` portable folder and Inno Setup installer.
-3. On macOS, open the app directly with:
-   ```bash
-   open dist/VoiceNotes.app
-   ```
-   Or mount `dist/VoiceNotes.dmg` and drag `VoiceNotes.app` to `/Applications`.
+### 1. Build Standalone Executable (All Platforms)
+```bash
+uv run python build_executable.py
+```
+Outputs:
+- **Linux**: Standalone directory in `dist/VoiceNotes/` with relocatable `VoiceNotes` binary.
+- **macOS**: `dist/VoiceNotes.app` application bundle and `dist/VoiceNotes.dmg` disk image.
+- **Windows**: `dist/VoiceNotes/VoiceNotes.exe` portable folder and Inno Setup installer.
+
+### 2. Build Debian / Ubuntu (.deb) Packages
+
+VoiceNotes offers two packaging strategies to accommodate diverse deployment needs:
+
+#### Strategy 1: Single All-in-One Package (Recommended for easy offline installation)
+Bundles the complete desktop application, Python runtime, pre-downloaded offline models (Whisper & CAM++), and acceleration libraries into a single file:
+```bash
+uv run python scripts/build_deb.py --mode all-in-one
+```
+Install on any Ubuntu/Debian machine:
+```bash
+sudo dpkg -i dist/voicenotes_0.5.0_all-in-one_amd64.deb
+```
+
+#### Strategy 2: Two Split Packages (Alternative for modular updates)
+Separates the application/Python code from the larger neural network models and acceleration files:
+- **Package 1 (`voicenotes_0.5.0_amd64.deb` / `voicenotes-app_...deb`)**: Contains the application binary, GUI/CLI, desktop entry, icons, and audio samples (~370 MB).
+- **Package 2 (`voicenotes-models-accel_0.5.0_amd64.deb`)**: Contains the offline Whisper speech models, CAM++ ONNX speaker diarization models, and GPU acceleration configurations (~220 MB).
+
+Build both split packages:
+```bash
+uv run python scripts/build_deb.py --mode split
+```
+Install both together:
+```bash
+sudo dpkg -i dist/voicenotes_0.5.0_amd64.deb dist/voicenotes-models-accel_0.5.0_amd64.deb
+```
+
+#### Strategy 3: Generate All Packages at Once
+```bash
+uv run python build_executable.py --deb both
+# or
+uv run python scripts/build_deb.py --mode both
+```
+All `.deb` artifacts are placed in `dist/`. Fast `gzip` compression is used by default; pass `--compression xz` or `--compression zstd` if maximum archive compression is desired.
 
 ---
 

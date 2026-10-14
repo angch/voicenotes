@@ -7,6 +7,20 @@ cd "$DIR"
 
 echo "Starting VoiceNotes..."
 
+# Linux display server & library paths configuration
+if [ "$(uname)" = "Linux" ]; then
+    if [ -d "$DIR/voicenotes/lib" ]; then
+        export LD_LIBRARY_PATH="$DIR/voicenotes/lib${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
+    fi
+    if [ -z "$QT_QPA_PLATFORM" ]; then
+        if [ -n "$WAYLAND_DISPLAY" ] || [ "$XDG_SESSION_TYPE" = "wayland" ]; then
+            export QT_QPA_PLATFORM="wayland;xcb"
+        elif [ -n "$DISPLAY" ] || [ "$XDG_SESSION_TYPE" = "x11" ]; then
+            export QT_QPA_PLATFORM="xcb"
+        fi
+    fi
+fi
+
 # 1. If virtual environment exists, run using virtual environment
 if [ -f ".venv/bin/python" ]; then
     exec ".venv/bin/python" main.py "$@"

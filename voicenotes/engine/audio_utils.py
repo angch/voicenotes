@@ -13,7 +13,10 @@ from typing import Callable, Optional, Tuple, Union
 
 import numpy as np
 import scipy.signal
-import sounddevice as sd
+try:
+    import sounddevice as sd
+except Exception:
+    sd = None
 import soundfile as sf
 
 
@@ -182,6 +185,11 @@ class AudioRecorder:
 
     def start(self) -> None:
         """Start recording from default microphone."""
+        if sd is None:
+            raise RuntimeError(
+                "Audio recording is unavailable because PortAudio could not be loaded. "
+                "Ensure libportaudio2 is installed or bundled."
+            )
         self._audio_chunks = []
         self.recording = True
         self._start_time = time.time()

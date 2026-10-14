@@ -50,8 +50,10 @@ class SpeakerDiarizer:
 
         # Available execution providers
         providers = ["CPUExecutionProvider"]
-        if "CUDAExecutionProvider" in ort.get_available_providers():
-            providers.insert(0, "CUDAExecutionProvider")
+        available_providers = ort.get_available_providers()
+        for p in ("ROCMExecutionProvider", "MIGraphXExecutionProvider", "CUDAExecutionProvider"):
+            if p in available_providers:
+                providers.insert(0, p)
 
         self.session = ort.InferenceSession(
             str(self.model_path),

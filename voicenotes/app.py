@@ -138,6 +138,45 @@ def run_gui(initial_audio: str | None = None) -> int:
     return app.exec()
 
 
+def print_system_info() -> int:
+    """Print system diagnostics including display server and hardware acceleration engine."""
+    import os
+    import sys
+    from voicenotes.compat import (
+        get_hardware_acceleration_info,
+        is_cuda_available,
+        is_rocm_available,
+        get_cuda_device_name,
+        get_rocm_device_name,
+    )
+    from voicenotes.config import get_models_dir
+
+    label, desc = get_hardware_acceleration_info()
+    models_dir = get_models_dir()
+    found_models = []
+    if models_dir.exists():
+        found_models = sorted([p.name for p in models_dir.iterdir() if not p.name.startswith(".")])
+
+    print("=========================================================")
+    print(f" {__app_name__} System & Hardware Acceleration Diagnostics ")
+    print("=========================================================")
+    print(f"Version            : {__version__}")
+    print(f"Platform           : {sys.platform} (Python {sys.version.split()[0]})")
+    session_type = os.environ.get("XDG_SESSION_TYPE", "Unknown")
+    wayland_disp = os.environ.get("WAYLAND_DISPLAY", "None")
+    x11_disp = os.environ.get("DISPLAY", "None")
+    print(f"Display Server     : {session_type} (WAYLAND_DISPLAY={wayland_disp}, DISPLAY={x11_disp})")
+    print(f"Qt QPA Platform    : {os.environ.get('QT_QPA_PLATFORM', 'auto')}")
+    print(f"Active Engine      : {label}")
+    print(f"Engine Details     : {desc}")
+    print(f"NVIDIA CUDA Avail  : {is_cuda_available()} ({get_cuda_device_name() or 'None'})")
+    print(f"AMD ROCm Avail     : {is_rocm_available()} ({get_rocm_device_name() or 'None'})")
+    print(f"Models Directory   : {models_dir}")
+    print(f"Available Models   : {', '.join(found_models) if found_models else 'None'}")
+    print("=========================================================")
+    return 0
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(
         prog="voicenotes",
@@ -145,6 +184,7 @@ def main() -> int:
     )
     parser.add_argument("audio", nargs="?", help="Audio or video file to open or transcribe")
     parser.add_argument("--cli", action="store_true", help="Run in headless CLI mode instead of GUI")
+    parser.add_argument("--info", action="store_true", help="Print system, display server, and hardware acceleration info")
     parser.add_argument("--model", default="base", choices=["tiny", "base", "small", "medium"], help="Whisper model to use")
     parser.add_argument("--language", default="auto", help="Language code (e.g. en, es, zh, auto)")
     parser.add_argument("--no-diarize", dest="diarize", action="store_false", help="Disable speaker diarization")
@@ -154,6 +194,9 @@ def main() -> int:
     parser.set_defaults(diarize=True)
 
     args = parser.parse_args()
+
+    if args.info:
+        return print_system_info()
 
     if args.cli:
         if not args.audio:
