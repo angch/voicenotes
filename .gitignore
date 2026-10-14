@@ -39,3 +39,5 @@ models/*.onnx
 samples/test_output.txt
 temp_recordings/
 *.tmp.wav
+eval_downloads/
+eval_results/

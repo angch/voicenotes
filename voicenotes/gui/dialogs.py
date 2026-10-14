@@ -324,7 +324,7 @@ class AboutDialog(QDialog):
     def __init__(self, parent: Optional[QWidget] = None):
         super().__init__(parent)
         self.setWindowTitle("About VoiceNotes")
-        self.setFixedSize(450, 340)
+        self.setFixedSize(470, 380)
         eff_theme = get_effective_theme(config.get("theme", "system"))
         self.setStyleSheet(get_stylesheet(eff_theme))
         is_dark = eff_theme == "dark"
@@ -333,7 +333,7 @@ class AboutDialog(QDialog):
         layout.setContentsMargins(24, 24, 24, 24)
         layout.setSpacing(14)
 
-        title = QLabel("🎙️ VoiceNotes")
+        title = QLabel("VoiceNotes")
         title.setStyleSheet(f"font-size: 22px; font-weight: bold; color: {'#4dabf7' if is_dark else '#0067c0'};")
         title.setAlignment(Qt.AlignmentFlag.AlignCenter)
         layout.addWidget(title)
@@ -345,14 +345,28 @@ class AboutDialog(QDialog):
 
         info = QLabel(
             "• <b>100% Offline & Private</b>: Runs entirely on your machine. No audio is ever sent to the cloud.<br>"
-            "• <b>State-of-the-Art Whisper AI</b>: Ultra-fast transcription via Faster-Whisper.<br>"
+            "• <b>Whisper AI Acceleration</b>: Fast transcription with CPU and NVIDIA CUDA GPU support.<br>"
             "• <b>Speaker Diarization</b>: Automatically identifies and labels different speakers.<br>"
             "• <b>Interactive Notepad</b>: Click any timestamp to jump and play audio from that moment.<br>"
-            "• <b>Zero-Config Portability</b>: Built for non-technical users."
+            "• <b>Zero-Config Portability</b>: Built for desktop productivity."
         )
         info.setWordWrap(True)
         info.setStyleSheet("line-height: 1.4;")
         layout.addWidget(info)
+
+        donate_info = QLabel(
+            "<b>Support Civic Tech</b>: If you would like to show support, please consider donating to the "
+            "<a href='https://sinarproject.org/donate' style='color: "
+            + ("#4dabf7" if is_dark else "#0067c0")
+            + "; text-decoration: underline;'>Sinar Project</a> "
+            "(<a href='https://sinarproject.org/donate' style='color: "
+            + ("#4dabf7" if is_dark else "#0067c0")
+            + ";'>https://sinarproject.org/donate</a>)."
+        )
+        donate_info.setOpenExternalLinks(True)
+        donate_info.setWordWrap(True)
+        donate_info.setStyleSheet("font-size: 12px; margin-top: 4px;")
+        layout.addWidget(donate_info)
 
         btn_box = QDialogButtonBox(QDialogButtonBox.StandardButton.Ok)
         btn_box.accepted.connect(self.accept)
