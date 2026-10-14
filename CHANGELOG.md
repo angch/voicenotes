@@ -5,6 +5,16 @@ All notable changes to VoiceNotes are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.5.3] - 2026-10-14
+
+### Fixed
+- **Headless CI Test Suite Execution with Qt Offscreen Platform**:
+  - Configured `QT_QPA_PLATFORM: offscreen` in GitHub Actions release workflow for the Linux build job.
+  - Upgraded `xvfb-run` virtual framebuffer parameters to 24-bit TrueColor depth (`-s "-screen 0 1280x1024x24"`), preventing Qt 6 GUI crashes on default 8-bit displays.
+  - Added `tests/conftest.py` with automatic `QT_QPA_PLATFORM=offscreen` detection for headless Linux and CI environments.
+
+---
+
 ## [0.5.2] - 2026-10-14
 
 ### Fixed

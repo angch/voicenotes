@@ -7,9 +7,9 @@ on:
   workflow_dispatch:
     inputs:
       tag_name:
-        description: 'Release tag name (e.g. v0.5.2)'
+        description: 'Release tag name (e.g. v0.5.3)'
         required: false
-        default: 'v0.5.2'
+        default: 'v0.5.3'
 
 permissions:
   contents: write
@@ -70,7 +70,7 @@ jobs:
           $ver = "${{ github.ref_name }}"
           if (-not $ver -or $ver.StartsWith("refs/") -or $ver -eq "main") {
             $ver = "${{ github.event.inputs.tag_name }}"
-            if (-not $ver) { $ver = "v0.5.2" }
+            if (-not $ver) { $ver = "v0.5.3" }
           }
           $cleanVer = $ver.TrimStart('v')
           Write-Host "Resolved release tag: $ver (clean version: $cleanVer)"
@@ -147,7 +147,7 @@ jobs:
           ver="${{ github.ref_name }}"
           if [ -z "$ver" ] || [[ "$ver" == refs/* ]] || [ "$ver" = "main" ]; then
             ver="${{ github.event.inputs.tag_name }}"
-            if [ -z "$ver" ]; then ver="v0.5.2"; fi
+            if [ -z "$ver" ]; then ver="v0.5.3"; fi
           fi
           cleanVer="${ver#v}"
           echo "tag=$ver" >> $GITHUB_OUTPUT
@@ -202,8 +202,10 @@ jobs:
           uv run -- python build_executable.py --models tiny,base,diarization --skip-pyinstaller
 
       - name: Run Test Suite (Headless Display)
+        env:
+          QT_QPA_PLATFORM: offscreen
         run: |
-          xvfb-run -a uv run -- python -m pytest -v --tb=short
+          xvfb-run -s "-screen 0 1280x1024x24" uv run -- python -m pytest -v --tb=short
 
       - name: Determine Version
         id: version_info
@@ -211,7 +213,7 @@ jobs:
           ver="${{ github.ref_name }}"
           if [ -z "$ver" ] || [[ "$ver" == refs/* ]] || [ "$ver" = "main" ]; then
             ver="${{ github.event.inputs.tag_name }}"
-            if [ -z "$ver" ]; then ver="v0.5.2"; fi
+            if [ -z "$ver" ]; then ver="v0.5.3"; fi
           fi
           cleanVer="${ver#v}"
           echo "tag=$ver" >> $GITHUB_OUTPUT
@@ -256,7 +258,7 @@ jobs:
           ver="${{ github.ref_name }}"
           if [ -z "$ver" ] || [[ "$ver" == refs/* ]] || [ "$ver" = "main" ]; then
             ver="${{ github.event.inputs.tag_name }}"
-            if [ -z "$ver" ]; then ver="v0.5.2"; fi
+            if [ -z "$ver" ]; then ver="v0.5.3"; fi
           fi
           echo "tag=$ver" >> $GITHUB_OUTPUT
 
