@@ -16,7 +16,7 @@ permissions:
 
 jobs:
   build-windows:
-    name: Build Windows Installer & Release
+    name: Build Windows Installer
     runs-on: windows-latest
 
     steps:
@@ -96,23 +96,115 @@ jobs:
           Compress-Archive -Path dist\VoiceNotes\* -DestinationPath $zipPath -Force
           Get-ChildItem dist-installer
 
-      - name: Upload Installer Artifacts
+      - name: Upload Windows Artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: VoiceNotes-${{ steps.version_info.outputs.tag }}-windows-x64
+          name: windows-artifacts
           path: |
             dist-installer/VoiceNotes-Setup-*.exe
             dist-installer/VoiceNotes-*-portable.zip
           if-no-files-found: error
+
+  build-macos:
+    name: Build macOS Application & DMG
+    runs-on: macos-latest
+
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+        with:
+          version: "latest"
+
+      - name: Install Dependencies
+        run: |
+          uv sync --all-groups
+
+      - name: Pre-download Offline Models for Packaging
+        run: |
+          uv run -- python build_executable.py --models tiny,base,diarization --skip-pyinstaller
+
+      - name: Run Test Suite
+        run: |
+          uv run -- python -m pytest -v --tb=short
+
+      - name: Build Standalone macOS App & DMG
+        run: |
+          uv run -- python build_executable.py --models tiny,base,diarization
+
+      - name: Determine Version
+        id: version_info
+        run: |
+          ver="${{ github.ref_name }}"
+          if [ -z "$ver" ] || [[ "$ver" == refs/* ]] || [ "$ver" = "main" ]; then
+            ver="${{ github.event.inputs.tag_name }}"
+            if [ -z "$ver" ]; then ver="v0.1.0"; fi
+          fi
+          cleanVer="${ver#v}"
+          echo "tag=$ver" >> $GITHUB_OUTPUT
+          echo "clean_version=$cleanVer" >> $GITHUB_OUTPUT
+
+      - name: Package macOS Artifacts
+        run: |
+          mkdir -p dist-installer
+          cp dist/VoiceNotes.dmg "dist-installer/VoiceNotes-${{ steps.version_info.outputs.tag }}-macos.dmg"
+          cd dist && zip -r "../dist-installer/VoiceNotes-${{ steps.version_info.outputs.tag }}-macos-app.zip" VoiceNotes.app
+
+      - name: Upload macOS Artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: macos-artifacts
+          path: |
+            dist-installer/VoiceNotes-*-macos.dmg
+            dist-installer/VoiceNotes-*-macos-app.zip
+          if-no-files-found: error
+
+  publish-release:
+    name: Publish Multiplatform Release
+    needs: [build-windows, build-macos]
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Determine Version
+        id: version_info
+        run: |
+          ver="${{ github.ref_name }}"
+          if [ -z "$ver" ] || [[ "$ver" == refs/* ]] || [ "$ver" = "main" ]; then
+            ver="${{ github.event.inputs.tag_name }}"
+            if [ -z "$ver" ]; then ver="v0.1.0"; fi
+          fi
+          echo "tag=$ver" >> $GITHUB_OUTPUT
+
+      - name: Download Windows Artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: windows-artifacts
+          path: release-assets
+
+      - name: Download macOS Artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: macos-artifacts
+          path: release-assets
 
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ steps.version_info.outputs.tag }}
           name: VoiceNotes ${{ steps.version_info.outputs.tag }}
-          files: |
-            dist-installer/VoiceNotes-Setup-*.exe
-            dist-installer/VoiceNotes-*-portable.zip
+          files: release-assets/*
           draft: false
           prerelease: false
           generate_release_notes: true

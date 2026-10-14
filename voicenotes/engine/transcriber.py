@@ -9,6 +9,7 @@ from __future__ import annotations
 import glob
 import logging
 import os
+import platform
 import sys
 import time
 from dataclasses import dataclass, field
@@ -126,6 +127,36 @@ def get_cuda_device_name() -> Optional[str]:
         pass
 
     return "NVIDIA CUDA GPU"
+
+
+def get_hardware_acceleration_info() -> tuple[str, str]:
+    """
+    Return (status_label, tooltip) describing current hardware acceleration or compute engine.
+    Works across Windows (CUDA / CPU), macOS (Apple Silicon / CPU), and Linux.
+    """
+    if is_cuda_available():
+        gpu_name = get_cuda_device_name() or "NVIDIA CUDA GPU"
+        return f"⚡ NVIDIA CUDA ({gpu_name})", f"Hardware Acceleration active: {gpu_name} (float16)"
+
+    if sys.platform == "darwin":
+        try:
+            import subprocess
+
+            brand = subprocess.check_output(
+                ["sysctl", "-n", "machdep.cpu.brand_string"],
+                stderr=subprocess.DEVNULL,
+                text=True,
+            ).strip()
+            if brand:
+                return f"⚡ Offline Ready ({brand} INT8)", f"Execution mode: {brand} (Accelerated INT8 / NEON)"
+        except Exception:
+            pass
+        machine = platform.machine()
+        if "arm" in machine.lower():
+            return "⚡ Offline Ready (Apple Silicon INT8)", "Execution mode: Apple Silicon (Accelerated INT8 / NEON)"
+
+    return "⚡ Offline Ready (CPU INT8)", "Execution mode: Optimized CPU (INT8 quantization)"
+
 
 
 @dataclass

@@ -27,7 +27,7 @@ class ModelManager:
     @classmethod
     def get_search_directories(cls) -> list[Path]:
         """Return all local and bundled directories where offline models might reside."""
-        from voicenotes.config import get_app_dir, get_bundle_dir, get_models_dir
+        from voicenotes.config import get_app_dir, get_bundle_dir, get_models_dir, get_resource_dirs
 
         candidates = [
             get_models_dir(),
@@ -36,6 +36,9 @@ class ModelManager:
             get_app_dir() / "_internal" / "models",
             Path(os.path.expanduser("~")) / ".cache" / "voicenotes" / "models",
         ]
+        for r in get_resource_dirs():
+            candidates.append(r / "models")
+            candidates.append(r / "_internal" / "models")
         unique_dirs: list[Path] = []
         seen = set()
         for d in candidates:

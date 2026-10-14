@@ -622,6 +622,8 @@ class SendVoiceDialog(QDialog):
         try:
             if sys.platform == "win32":
                 subprocess.Popen(["explorer", f"/select,{os.path.abspath(file_path)}"])
+            elif sys.platform == "darwin":
+                subprocess.Popen(["open", "-R", str(file_path.resolve())])
             else:
                 QDesktopServices.openUrl(QUrl.fromLocalFile(str(file_path.parent.resolve())))
         except Exception:
@@ -642,10 +644,11 @@ class SendVoiceDialog(QDialog):
         p = Path(dest_path)
         if self._build_bundle(p):
             self._reveal_file(p)
+            file_mgr = "Finder" if sys.platform == "darwin" else "File Explorer"
             QMessageBox.information(
                 self,
                 "Bundle Saved",
-                f"Tuning bundle saved successfully to:\n{p}\n\nThe folder has been opened in File Explorer.",
+                f"Tuning bundle saved successfully to:\n{p}\n\nThe folder has been opened in {file_mgr}.",
             )
 
     def _on_submit_github(self):

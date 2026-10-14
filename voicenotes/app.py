@@ -59,9 +59,50 @@ def run_cli(args: argparse.Namespace) -> int:
     return 0
 
 
+def setup_macos_app_name():
+    """Ensure the macOS system menu bar displays 'VoiceNotes' instead of 'Python'."""
+    if sys.platform != "darwin":
+        return
+
+    try:
+        from Foundation import NSBundle, NSProcessInfo
+
+        proc = NSProcessInfo.processInfo()
+        proc.setProcessName_(__app_name__)
+
+        bundle = NSBundle.mainBundle()
+        info = bundle.infoDictionary()
+        if info is not None:
+            info["CFBundleName"] = __app_name__
+            info["CFBundleDisplayName"] = __app_name__
+    except Exception:
+        pass
+
+
+def update_macos_main_menu():
+    """Update Cocoa NSApplication main menu title if running on macOS."""
+    if sys.platform != "darwin":
+        return
+
+    try:
+        from AppKit import NSApplication
+
+        ns_app = NSApplication.sharedApplication()
+        menu = ns_app.mainMenu()
+        if menu and menu.numberOfItems() > 0:
+            first_item = menu.itemAtIndex_(0)
+            first_item.setTitle_(__app_name__)
+            if first_item.hasSubmenu():
+                first_item.submenu().setTitle_(__app_name__)
+    except Exception:
+        pass
+
+
 def run_gui(initial_audio: str | None = None) -> int:
     """Run desktop application GUI."""
     setup_cuda_dll_paths()
+    setup_macos_app_name()
+
     # Windows high-DPI and taskbar integration
     if sys.platform == "win32":
         try:
@@ -73,9 +114,16 @@ def run_gui(initial_audio: str | None = None) -> int:
         except Exception:
             pass
 
+    from PyQt6.QtCore import QCoreApplication
+    from PyQt6.QtGui import QGuiApplication
+
+    QCoreApplication.setApplicationName(__app_name__)
+    QCoreApplication.setOrganizationName("VoiceNotes")
+
     app = QApplication(sys.argv)
     app.setApplicationName(__app_name__)
     app.setApplicationVersion(__version__)
+    QGuiApplication.setApplicationDisplayName(__app_name__)
 
     icon_path = get_app_icon_path()
     if icon_path.exists():
@@ -86,6 +134,7 @@ def run_gui(initial_audio: str | None = None) -> int:
         window.load_audio_file(str(Path(initial_audio).resolve()))
 
     window.show()
+    update_macos_main_menu()
     return app.exec()
 
 

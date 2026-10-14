@@ -106,18 +106,57 @@ def build():
         print(f"\n[ERROR] Build failed with return code {result.returncode}", file=sys.stderr)
         sys.exit(result.returncode)
 
-    output_exe = dist_dir / "VoiceNotes" / "VoiceNotes.exe"
-    if output_exe.exists():
-        size_mb = os.path.getsize(output_exe) / (1024 * 1024)
+    output_target = None
+    if sys.platform == "win32":
+        output_target = dist_dir / "VoiceNotes" / "VoiceNotes.exe"
+    elif sys.platform == "darwin":
+        app_target = dist_dir / "VoiceNotes.app"
+        bin_target = dist_dir / "VoiceNotes" / "VoiceNotes"
+        output_target = app_target if app_target.exists() else bin_target
+    else:
+        output_target = dist_dir / "VoiceNotes" / "VoiceNotes"
+
+    if output_target and output_target.exists():
+        if output_target.is_dir():
+            size_mb = sum(f.stat().st_size for f in output_target.glob("**/*") if f.is_file()) / (1024 * 1024)
+        else:
+            size_mb = os.path.getsize(output_target) / (1024 * 1024)
+
         print("\n=========================================================")
         print(" [SUCCESS] BUILD COMPLETE!")
-        print(f" Standalone Application: {output_exe}")
-        print(f" Executable Size: {size_mb:.2f} MB")
-        print(" Portable Directory: dist/VoiceNotes/")
+        print(f" Standalone Application: {output_target}")
+        print(f" Application Size: {size_mb:.2f} MB")
+
+        if sys.platform == "darwin" and (dist_dir / "VoiceNotes.app").exists():
+            print(f" To launch: open \"{dist_dir / 'VoiceNotes.app'}\"")
+            # Optionally build DMG if hdiutil is available
+            dmg_path = dist_dir / "VoiceNotes.dmg"
+            if shutil.which("hdiutil"):
+                try:
+                    if dmg_path.exists():
+                        dmg_path.unlink()
+                    print(f" Generating macOS disk image (DMG)...")
+                    subprocess.run(
+                        [
+                            "hdiutil", "create",
+                            "-volname", "VoiceNotes",
+                            "-srcfolder", str(dist_dir / "VoiceNotes.app"),
+                            "-ov", "-format", "UDZO",
+                            str(dmg_path),
+                        ],
+                        check=True,
+                        capture_output=True,
+                    )
+                    dmg_mb = os.path.getsize(dmg_path) / (1024 * 1024)
+                    print(f" Created macOS DMG installer: {dmg_path} ({dmg_mb:.2f} MB)")
+                except Exception as e:
+                    print(f" [Notice] DMG creation skipped: {e}")
+        else:
+            print(" Portable Directory: dist/VoiceNotes/")
         print(" Anyone can run this without Python installed!")
         print("=========================================================")
     else:
-        print(f"\n[ERROR] Output executable not found at {output_exe}", file=sys.stderr)
+        print(f"\n[ERROR] Output executable not found at {dist_dir}", file=sys.stderr)
         sys.exit(1)
 
 

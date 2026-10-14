@@ -28,9 +28,37 @@ def get_bundle_dir() -> Path:
     return get_app_dir()
 
 
+def get_resource_dirs() -> list[Path]:
+    """Return ordered list of directories where assets, models, and samples might be located."""
+    dirs: list[Path] = []
+    bundle_dir = get_bundle_dir()
+    dirs.append(bundle_dir)
+    app_dir = get_app_dir()
+    if app_dir not in dirs:
+        dirs.append(app_dir)
+
+    # macOS .app bundle layouts
+    if getattr(sys, "frozen", False) and sys.platform == "darwin":
+        exe_path = Path(sys.executable).resolve()
+        # Contents/Resources
+        res_dir = exe_path.parent.parent / "Resources"
+        if res_dir.exists() and res_dir not in dirs:
+            dirs.append(res_dir)
+        # Directory containing VoiceNotes.app (portable layout)
+        portable_dir = exe_path.parent.parent.parent
+        if portable_dir.exists() and portable_dir not in dirs:
+            dirs.append(portable_dir)
+
+    return dirs
+
+
 def get_app_icon_path() -> Path:
-    """Return the path to the application icon."""
-    for base in (get_bundle_dir(), get_app_dir()):
+    """Return the path to the application icon (.icns, .png, or .ico)."""
+    for base in get_resource_dirs():
+        if sys.platform == "darwin":
+            icns = base / "assets" / "app_icon.icns"
+            if icns.exists():
+                return icns
         png = base / "assets" / "app_icon.png"
         if png.exists():
             return png
@@ -45,17 +73,13 @@ def get_models_dir() -> Path:
     Return the directory where offline models are stored.
     Checks bundled models first, then app_dir/models, then user cache.
     """
-    # 1. Local models folder in app dir (for portable distribution)
-    app_models = get_app_dir() / "models"
-    if app_models.exists():
-        return app_models
+    # 1. Search candidate resource directories
+    for base in get_resource_dirs():
+        candidate = base / "models"
+        if candidate.exists():
+            return candidate
 
-    # 2. Bundled models folder (if packaged inside PyInstaller internal)
-    bundle_models = get_bundle_dir() / "models"
-    if bundle_models.exists():
-        return bundle_models
-
-    # 3. User cache directory
+    # 2. User cache directory
     user_cache = Path(os.path.expanduser("~")) / ".cache" / "voicenotes" / "models"
     user_cache.mkdir(parents=True, exist_ok=True)
     return user_cache
@@ -63,12 +87,10 @@ def get_models_dir() -> Path:
 
 def get_samples_dir() -> Path:
     """Return the directory containing audio test samples."""
-    samples = get_bundle_dir() / "samples"
-    if samples.exists():
-        return samples
-    app_samples = get_app_dir() / "samples"
-    if app_samples.exists():
-        return app_samples
+    for base in get_resource_dirs():
+        candidate = base / "samples"
+        if candidate.exists():
+            return candidate
     return get_app_dir() / "samples"
 
 
@@ -131,7 +153,7 @@ DEFAULT_SETTINGS: Dict[str, Any] = {
     "diarization_threshold": 0.65,
     "theme": "system",  # 'system' (follow OS), 'light', or 'dark'
     "font_size": 13,
-    "font_family": "Segoe UI",
+    "font_family": ".AppleSystemUIFont" if sys.platform == "darwin" else "Segoe UI",
     "word_wrap": True,
     "timestamp_format": "[{start} - {end}]",
     "last_open_folder": "",

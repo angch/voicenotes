@@ -62,17 +62,23 @@ All processing runs locally on device once models are downloaded. No recordings 
 ## Quick Start
 
 ### Prerequisites
-- Windows 10/11, macOS, or Linux
+- macOS (Apple Silicon M1–M4 or Intel) or Windows 10/11
 - [uv](https://docs.astral.sh/uv/) (recommended) or Python 3.10+
 
-### Option A: One-Click Run (Windows)
+### Option A: One-Click Run (macOS)
+Run in terminal or double-click `run.command` in Finder:
+```bash
+./run.sh
+```
+
+### Option B: One-Click Run (Windows)
 Double-click `run.bat` or run in PowerShell:
 ```powershell
 .\run.ps1
 ```
 
-### Option B: Using `uv`
-```powershell
+### Option C: Using `uv` (Cross-Platform)
+```bash
 # Clone the repository
 git clone <repo-url>
 cd voicenotes
@@ -95,7 +101,7 @@ VoiceNotes includes test audio files in the `samples/` directory:
 | `single_mic_female.flac` | 1 | 2.1s | Studio microphone recording (female voice). |
 
 ### Testing via the GUI
-1. Launch VoiceNotes (`run.bat` or `uv run python main.py`).
+1. Launch VoiceNotes (`./run.sh`, `run.bat`, or `uv run python main.py`).
 2. Go to **Help** -> **Load Test Audio Clip** -> select `Two Speakers Conversation (30s)`.
 3. Ensure **Detect speakers** is enabled.
 4. Click **Transcribe**.
@@ -103,7 +109,7 @@ VoiceNotes includes test audio files in the `samples/` directory:
 
 ### Testing via the Command Line (CLI)
 Transcribe directly from the terminal in headless mode:
-```powershell
+```bash
 # Transcribe two-speaker conversation with diarization
 uv run python main.py samples/two_speakers_conversation.wav --cli --speakers 2
 
@@ -113,19 +119,22 @@ uv run python main.py samples/jfk.flac --cli --model tiny -o jfk.srt
 
 ---
 
-## Building the Standalone Executable
+## Building the Standalone Executable & Packages
 
-To generate a standalone executable folder for distribution:
+To generate standalone standalone distributions without requiring a Python installation:
 
 1. Run the build script:
-   ```powershell
+   ```bash
    uv run python build_executable.py
    ```
-2. The bundled application is generated in:
+2. The bundled application is generated in `dist/`:
+   - **macOS**: `dist/VoiceNotes.app` application bundle and `dist/VoiceNotes.dmg` disk image.
+   - **Windows**: `dist/VoiceNotes/VoiceNotes.exe` portable folder and Inno Setup installer.
+3. On macOS, open the app directly with:
+   ```bash
+   open dist/VoiceNotes.app
    ```
-   dist/VoiceNotes/VoiceNotes.exe
-   ```
-3. Distribute the `dist/VoiceNotes` directory. Target machines can run `VoiceNotes.exe` without Python installed.
+   Or mount `dist/VoiceNotes.dmg` and drag `VoiceNotes.app` to `/Applications`.
 
 ---
 
@@ -157,19 +166,24 @@ voicenotes/
 │   ├── jfk.flac
 │   ├── single_mic_male.wav
 │   └── single_mic_female.flac
-├── assets/                        # High-resolution application icons (PNG and multi-size ICO)
-│   ├── app_icon.ico
+├── assets/                        # High-resolution application icons (PNG, ICNS, ICO)
+│   ├── app_icon.icns              # macOS Apple Icon Image
+│   ├── app_icon.ico               # Windows multi-size icon
 │   └── app_icon.png
-├── tests/                         # Automated test suite (38 tests)
+├── tests/                         # Automated test suite (52 tests)
 │   ├── test_engine.py
 │   ├── test_exporters.py
-│   └── test_gui.py
+│   ├── test_gui.py
+│   └── test_vocabulary.py
 ├── scripts/
 │   ├── capture_e2e_screenshots.py # E2E visual inspection runner
-│   └── download_models.py         # Pre-download models for offline distribution
-├── build_executable.py            # Builds standalone VoiceNotes.exe
-├── VoiceNotes.spec                # PyInstaller specification
+│   ├── download_models.py         # Pre-download models for offline distribution
+│   └── eval_malaysian_speech.py   # Accuracy benchmarking
+├── build_executable.py            # Standalone builder (VoiceNotes.app, DMG, or VoiceNotes.exe)
+├── VoiceNotes.spec                # Cross-platform PyInstaller specification
 ├── VoiceNotes.iss                 # Inno Setup Windows installer specification
+├── run.sh                         # macOS and Linux launcher script
+├── run.command                    # macOS double-clickable Finder launcher
 ├── run.bat                        # Windows batch launcher
 ├── run.ps1                        # PowerShell launcher
 ├── pyproject.toml                 # Project metadata and dependencies
@@ -180,25 +194,27 @@ voicenotes/
 
 ## Keyboard Shortcuts
 
-| Shortcut | Action |
-| :--- | :--- |
-| `Ctrl + N` | New Note |
-| `Ctrl + O` | Open Text File |
-| `Ctrl + S` | Save Note |
-| `Ctrl + Shift + S` | Save Note As... |
-| `Ctrl + Shift + Z` | Archive Voice Note Package (.zip) |
-| `Ctrl + Shift + O` | Open Audio or Video File |
-| `Ctrl + R` | Record / Dictate from Microphone |
-| `Ctrl + F` | Find in Note |
-| `Ctrl + H` | Replace in Note |
-| `F3` / `Shift + F3` | Find Next / Previous |
-| `F5` | Transcribe Loaded Audio |
-| `Ctrl + P` / `Space` | Play / Pause Audio |
-| `Ctrl + Left` | Skip Back 5 Seconds |
-| `Ctrl + Right` | Skip Forward 5 Seconds |
-| `Ctrl + Shift + C` | Copy Plain Text (without timestamps) |
-| `Ctrl + =` / `Ctrl + -` | Zoom In / Zoom Out (Font Size) |
-| `Ctrl + ,` | Settings & Offline Models Catalog |
+> **Note for macOS users**: The `Ctrl` modifier automatically maps to `Cmd` (`⌘`) on macOS (e.g. `Cmd + S` to save, `Cmd + O` to open, `Cmd + F` to find).
+
+| Shortcut (Win / Linux) | Shortcut (macOS) | Action |
+| :--- | :--- | :--- |
+| `Ctrl + N` | `Cmd + N` | New Note |
+| `Ctrl + O` | `Cmd + O` | Open Text File |
+| `Ctrl + S` | `Cmd + S` | Save Note |
+| `Ctrl + Shift + S` | `Cmd + Shift + S` | Save Note As... |
+| `Ctrl + Shift + Z` | `Cmd + Shift + Z` | Archive Voice Note Package (.zip) |
+| `Ctrl + Shift + O` | `Cmd + Shift + O` | Open Audio or Video File |
+| `Ctrl + R` | `Cmd + R` | Record / Dictate from Microphone |
+| `Ctrl + F` | `Cmd + F` | Find in Note |
+| `Ctrl + H` | `Cmd + H` | Replace in Note |
+| `F3` / `Shift + F3` | `F3` / `Shift + F3` | Find Next / Previous |
+| `F5` | `F5` | Transcribe Loaded Audio |
+| `Ctrl + P` / `Space` | `Cmd + P` / `Space` | Play / Pause Audio |
+| `Ctrl + Left` | `Cmd + Left` | Skip Back 5 Seconds |
+| `Ctrl + Right` | `Cmd + Right` | Skip Forward 5 Seconds |
+| `Ctrl + Shift + C` | `Cmd + Shift + C` | Copy Plain Text (without timestamps) |
+| `Ctrl + =` / `Ctrl + -` | `Cmd + =` / `Cmd + -` | Zoom In / Zoom Out (Font Size) |
+| `Ctrl + ,` | `Cmd + ,` | Settings & Offline Models Catalog |
 
 ---
 

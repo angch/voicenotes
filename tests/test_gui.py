@@ -878,6 +878,27 @@ def test_main_window_vocabulary_import_signal(app_window, tmp_path):
     win.vocab_manager.clear()
 
 
+def test_macos_application_menu_name(app_window):
+    """Verify that on macOS the application menu name is VoiceNotes."""
+    import sys
+    from voicenotes import __app_name__
+    from voicenotes.app import setup_macos_app_name, update_macos_main_menu
+
+    setup_macos_app_name()
+    update_macos_main_menu()
+
+    if sys.platform == "darwin":
+        from AppKit import NSApplication
+        ns_app = NSApplication.sharedApplication()
+        menu = ns_app.mainMenu()
+        if menu and menu.numberOfItems() > 0:
+            first_item = menu.itemAtIndex_(0)
+            assert first_item.title() == __app_name__
+            if first_item.hasSubmenu():
+                assert first_item.submenu().title() == __app_name__
+
+
+
 
 
 

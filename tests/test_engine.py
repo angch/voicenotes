@@ -113,7 +113,7 @@ def test_cuda_detection_and_dll_setup():
 def test_app_icon_paths():
     icon_path = get_app_icon_path()
     assert icon_path.exists()
-    assert icon_path.suffix.lower() in (".png", ".ico")
+    assert icon_path.suffix.lower() in (".png", ".ico", ".icns")
     assert Path("assets/app_icon.png").exists()
     assert Path("assets/app_icon.ico").exists()
     assert Path("assets/app_icon.ico").stat().st_size > 1000

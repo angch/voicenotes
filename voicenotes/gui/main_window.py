@@ -58,6 +58,7 @@ from voicenotes.engine.transcriber import (
     TranscriptionResult,
     TranscriptionSegment,
     get_cuda_device_name,
+    get_hardware_acceleration_info,
     is_cuda_available,
 )
 from voicenotes.export.exporters import (
@@ -928,13 +929,9 @@ class MainWindow(QMainWindow):
         self.lbl_doc_stats.setText(f"Lines: {lines} | Words: {words} | Chars: {chars}")
 
     def _update_device_status(self):
-        gpu_name = get_cuda_device_name()
-        if is_cuda_available() and gpu_name:
-            self.lbl_device_status.setText(f"⚡ NVIDIA CUDA ({gpu_name})")
-            self.lbl_device_status.setToolTip(f"Hardware Acceleration active: {gpu_name} (float16)")
-        else:
-            self.lbl_device_status.setText("⚡ Offline Ready (CPU INT8)")
-            self.lbl_device_status.setToolTip("Execution mode: Optimized CPU (INT8 quantization)")
+        label_text, tooltip_text = get_hardware_acceleration_info()
+        self.lbl_device_status.setText(label_text)
+        self.lbl_device_status.setToolTip(tooltip_text)
 
     def load_audio_file(self, file_path: str):
         """Load an audio file into the player and prepare for transcription."""
