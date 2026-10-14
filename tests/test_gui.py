@@ -448,6 +448,67 @@ def test_system_theme_support(app_window):
     assert get_effective_theme("light") == "light"
     assert win.act_theme_light.isChecked() is True
 
+    # Restore system theme
+    win._set_theme("system")
+
+
+def test_dark_mode_transcript_readability_and_retheme(app_window):
+    """Ensure transcribed text is clearly readable in dark mode and re-themed automatically."""
+    from voicenotes.engine.transcriber import TranscriptionResult, TranscriptionSegment
+    from voicenotes.gui.speakers_panel import SPEAKER_COLORS, SPEAKER_COLORS_DARK
+
+    win = app_window
+    seg1 = TranscriptionSegment(id=1, start=0.0, end=5.0, text="First speech segment", speaker="Speaker 1")
+    seg2 = TranscriptionSegment(id=2, start=5.0, end=10.0, text="Second speech segment", speaker="Speaker 2")
+    res = TranscriptionResult(
+        audio_path="test.wav",
+        duration=10.0,
+        language="en",
+        language_probability=0.99,
+        segments=[seg1, seg2],
+        model_name="small",
+        num_speakers=2,
+        diarization_enabled=True,
+    )
+    win.current_result = res
+
+    # 1. Start in Light Mode
+    win._set_theme("light")
+    win._render_transcript_html(res)
+    html_light = win.editor.toHtml()
+    assert "#0067c0" in html_light
+    assert "#1a1a1a" in html_light
+
+    # 2. Switch to Dark Mode - text must become bright/readable, not pitch black
+    win._set_theme("dark")
+    html_dark = win.editor.toHtml()
+
+    # Dark mode text must NOT have #1a1a1a or #000000
+    assert "#1a1a1a" not in html_dark
+    assert "#f0f0f0" in html_dark, "Transcribed text must be rendered in readable off-white (#f0f0f0) in dark mode"
+
+    # Timestamp must use dark mode vibrant cyan, not dark navy
+    assert "#4dabf7" in html_dark
+    assert "#0067c0" not in html_dark
+
+    # Speaker 1 in dark palette must be present
+    assert SPEAKER_COLORS_DARK[0][0].lower() in html_dark.lower()
+
+    # 3. Test retheming when current_result is None (e.g. user editing imported HTML)
+    win.current_result = None
+    win._set_theme("light")
+    html_rethemed_light = win.editor.toHtml()
+    assert "#1a1a1a" in html_rethemed_light
+
+    win._set_theme("dark")
+    html_rethemed_dark = win.editor.toHtml()
+    assert "#1a1a1a" not in html_rethemed_dark
+    assert "#f0f0f0" in html_rethemed_dark
+
+    # Restore system theme
+    win._set_theme("system")
+
+
 
 def test_dual_pass_live_draft_and_refinement(app_window):
     """Test 250ms draft streaming and subsequent refinement turn replacement."""

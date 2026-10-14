@@ -665,6 +665,8 @@ class MainWindow(QMainWindow):
         self._apply_theme()
         if self.current_result:
             self._render_transcript_html(self.current_result)
+        elif hasattr(self, "_live_committed_segments") and self._live_committed_segments:
+            self._render_live_dictation()
         self.speakers_panel.refresh()
         if hasattr(self, "vocabulary_panel"):
             self.vocabulary_panel.refresh()
@@ -679,13 +681,58 @@ class MainWindow(QMainWindow):
             self._apply_theme()
             if self.current_result:
                 self._render_transcript_html(self.current_result)
+            elif hasattr(self, "_live_committed_segments") and self._live_committed_segments:
+                self._render_live_dictation()
             self.speakers_panel.refresh()
             if hasattr(self, "vocabulary_panel"):
                 self.vocabulary_panel.refresh()
 
+    def _retheme_editor_content(self, is_dark: bool):
+        """Update inline HTML colors in the editor to guarantee readability in the new theme."""
+        if not hasattr(self, "editor"):
+            return
+        if not self.editor.toPlainText().strip():
+            return
+        html = self.editor.toHtml()
+        if not html:
+            return
+
+        was_modified = self._is_modified
+
+        ts_color = "#4dabf7" if is_dark else "#0067c0"
+        text_color = "#f0f0f0" if is_dark else "#1a1a1a"
+        self.editor.document().setDefaultStyleSheet(
+            f"body, p {{ color: {text_color}; }} a {{ color: {ts_color}; text-decoration: none; }}"
+        )
+
+        if is_dark:
+            # 1. Timestamp links: light blue -> vibrant cyan
+            html = re.sub(r'(color:\s*)#0067c0', r'\1#4dabf7', html, flags=re.IGNORECASE)
+            # 2. Hardcoded dark text spans -> bright readable off-white
+            html = re.sub(r'(color:\s*)#(?:1a1a1a|000000|111111|222222|2d3748|333333)', r'\1#f0f0f0', html, flags=re.IGNORECASE)
+            # 3. Speaker palette colors: light -> dark
+            for (l_fg, _), (d_fg, _) in zip(SPEAKER_COLORS, SPEAKER_COLORS_DARK):
+                html = re.sub(rf'(color:\s*){re.escape(l_fg)}', rf'\1{d_fg}', html, flags=re.IGNORECASE)
+        else:
+            # 1. Timestamp links: vibrant cyan -> light blue
+            html = re.sub(r'(color:\s*)#4dabf7', r'\1#0067c0', html, flags=re.IGNORECASE)
+            # 2. White/light text spans -> crisp dark charcoal
+            html = re.sub(r'(color:\s*)#(?:f0f0f0|ffffff|e0e0e0|e2e8f0)', r'\1#1a1a1a', html, flags=re.IGNORECASE)
+            # 3. Speaker palette colors: dark -> light
+            for (l_fg, _), (d_fg, _) in zip(SPEAKER_COLORS, SPEAKER_COLORS_DARK):
+                html = re.sub(rf'(color:\s*){re.escape(d_fg)}', rf'\1{l_fg}', html, flags=re.IGNORECASE)
+
+        cursor = self.editor.textCursor()
+        pos = cursor.position()
+        self.editor.setHtml(html)
+        cursor.setPosition(min(pos, len(self.editor.toPlainText())))
+        self.editor.setTextCursor(cursor)
+        self._is_modified = was_modified
+
     def _apply_theme(self):
         theme_pref = config.get("theme", "system")
         eff_theme = get_effective_theme(theme_pref)
+        is_dark = (eff_theme == "dark")
 
         # Update Qt standard palette and application stylesheet for native widgets and dialogs
         app = QApplication.instance()
@@ -699,18 +746,26 @@ class MainWindow(QMainWindow):
             self.act_theme_system.setChecked(theme_pref == "system")
             self.act_theme_light.setChecked(theme_pref == "light")
             self.act_theme_dark.setChecked(theme_pref == "dark")
-            self.act_dark.setChecked(eff_theme == "dark")
+            self.act_dark.setChecked(is_dark)
 
         if hasattr(self, "btn_detect_speakers"):
             self._update_detect_speakers_style()
 
         if hasattr(self, "lbl_audio_name"):
             if self.current_audio_file:
-                col = "#4dabf7" if eff_theme == "dark" else "#0067c0"
+                col = "#4dabf7" if is_dark else "#0067c0"
                 self.lbl_audio_name.setStyleSheet(f"color: {col}; font-weight: 500;")
             else:
-                col = "#888888" if eff_theme == "dark" else "#666666"
+                col = "#888888" if is_dark else "#666666"
                 self.lbl_audio_name.setStyleSheet(f"color: {col}; font-style: italic;")
+
+        if hasattr(self, "editor"):
+            txt_col = "#f0f0f0" if is_dark else "#1a1a1a"
+            ts_col = "#4dabf7" if is_dark else "#0067c0"
+            self.editor.document().setDefaultStyleSheet(
+                f"body, p {{ color: {txt_col}; }} a {{ color: {ts_col}; text-decoration: none; }}"
+            )
+            self._retheme_editor_content(is_dark)
 
         if hasattr(self, "speakers_panel"):
             self.speakers_panel.refresh()
@@ -982,7 +1037,11 @@ class MainWindow(QMainWindow):
         is_dark = get_effective_theme(config.get("theme", "system")) == "dark"
         ts_color = "#4dabf7" if is_dark else "#0067c0"
         text_color = "#f0f0f0" if is_dark else "#1a1a1a"
-        draft_color = "#888888" if is_dark else "#555555"
+        draft_color = "#a0aec0" if is_dark else "#555555"
+
+        self.editor.document().setDefaultStyleSheet(
+            f"body, p {{ color: {text_color}; }} a {{ color: {ts_color}; text-decoration: none; }}"
+        )
 
         palette = SPEAKER_COLORS_DARK if is_dark else SPEAKER_COLORS
         speaker_color_map = {}
@@ -1001,7 +1060,7 @@ class MainWindow(QMainWindow):
             link_html = f'<a href="time:{start_sec:.2f}" style="color: {ts_color}; text-decoration: none; font-weight: bold; font-family: monospace;">{ts_str}</a>'
             speaker_html = ""
             if seg.speaker:
-                spk_col = speaker_color_map.get(seg.speaker, "#087f5b")
+                spk_col = speaker_color_map.get(seg.speaker, "#38d9a9" if is_dark else "#087f5b")
                 speaker_html = f' <b style="color: {spk_col};">{seg.speaker}:</b>'
             text_html = f'<span style="color: {text_color};"> {seg.text.strip()}</span>'
             html_parts.append(f"<p style='margin: 4px 0;'>{link_html}{speaker_html}{text_html}</p>")
@@ -1063,6 +1122,9 @@ class MainWindow(QMainWindow):
         # Clear editor and speakers panel
         self.editor.clear()
         self.speakers_panel.clear()
+        self._live_committed_segments = []
+        self._live_draft_text = ""
+        self.current_result = None
 
         # Start worker thread
         self.worker = TranscriptionWorker(
@@ -1114,6 +1176,10 @@ class MainWindow(QMainWindow):
         ts_color = "#4dabf7" if is_dark else "#0067c0"
         text_color = "#f0f0f0" if is_dark else "#1a1a1a"
 
+        self.editor.document().setDefaultStyleSheet(
+            f"body, p {{ color: {text_color}; }} a {{ color: {ts_color}; text-decoration: none; }}"
+        )
+
         # Map speakers to distinct palette colors matching the speakers panel
         speaker_color_map = {}
         distinct_speakers = []
@@ -1132,7 +1198,7 @@ class MainWindow(QMainWindow):
 
             speaker_html = ""
             if result.diarization_enabled and seg.speaker:
-                spk_col = speaker_color_map.get(seg.speaker, "#087f5b")
+                spk_col = speaker_color_map.get(seg.speaker, "#38d9a9" if is_dark else "#087f5b")
                 speaker_html = f' <b style="color: {spk_col};">{seg.speaker}:</b>'
 
             content_html = f'<span style="color: {text_color};"> {seg.text.strip()}</span>'
@@ -1212,7 +1278,7 @@ class MainWindow(QMainWindow):
             self._render_transcript_html(self.current_result)
 
         # 2. Backfill live committed segments & draft if live recording is active
-        if hasattr(self, "_live_committed_segments") and self._live_committed_segments:
+        elif hasattr(self, "_live_committed_segments") and self._live_committed_segments:
             count = self.vocab_manager.apply_to_segments(self._live_committed_segments)
             updated_count += count
             if hasattr(self, "_live_draft_text") and self._live_draft_text:
