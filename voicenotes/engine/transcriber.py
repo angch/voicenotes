@@ -374,6 +374,9 @@ class SpeechTranscriber:
                 vad_filter=True,
                 vad_parameters=dict(min_silence_duration_ms=400),
                 word_timestamps=True,
+                condition_on_previous_text=False,
+                repetition_penalty=1.15,
+                compression_ratio_threshold=2.4,
             )
             detected_lang = info.language
             lang_prob = info.language_probability
@@ -392,6 +395,9 @@ class SpeechTranscriber:
                     vad_filter=True,
                     vad_parameters=dict(min_silence_duration_ms=400),
                     word_timestamps=True,
+                    condition_on_previous_text=False,
+                    repetition_penalty=1.15,
+                    compression_ratio_threshold=2.4,
                 )
                 detected_lang = info.language
                 lang_prob = info.language_probability
